@@ -6,8 +6,8 @@ dependencies:
   - pip
   - netcdf4
   - xarray
-  - jupyterlab
-  - openpyxl
-  - pyyaml
+  - jupyterlab=3.3
+  - openpyxl=3.0
+  - pyyaml=6.0
   - pip:
     # - -r requirements.txt
