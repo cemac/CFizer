@@ -1,0 +1,13 @@
+name: cfizer
+channels:
+  - anaconda
+dependencies:
+  - python=3.10
+  - pip
+  - netcdf4
+  - xarray
+  - jupyterlab
+  - openpyxl
+  - pyyaml
+  - pip:
+    # - -r requirements.txt
