@@ -1,4 +1,23 @@
-options_to_attrs:
+global_attributes:
+  institution: University of Leeds
+  source: MONC
+  references: None
+  comment: None
+global_to_variable:
+  - MONC timestamp
+options_database:
+  variable: options_database
+  dimensions:
+  - number_options
+  - kvp
+  required:
+  - dxx
+  - dyy
+  reference_datetime:
+  - rad_start_year
+  - rad_start_day
+  - rad_start_time  # Assume this is in seconds
+  options_to_attrs:
   - "smagorinsky_enabled"
   - "damping_enabled"
   - "socrates_couple_enabled"
@@ -46,3 +65,34 @@ options_to_attrs:
   - "mcc_ozone_profile"
   - "dephy_forcings_enabled"
   - "dephy_file"
+time_units: 
+  use_input_file: True
+  input_file_variable: time
+  base_unit: seconds  # Ignored if use_input_file is True
+  ref_datetime: options_database  # or ISO format date-time string; ignored if use_input_file is True
+  calendar: gregorian # or standard. See https://cf-units.readthedocs.io/en/stable/utilities.html#cf_units.CALENDARS. Ignored if use_input_file is True and valid value found there.
+add_dimensions:
+  x:
+    spacing: dxx  # or a numeric value
+    position: mid  # end
+    attributes:
+      axis: X
+      units: m
+  y: 
+    spacing: dyy  # or a numeric value
+    position: mid  # end
+    attributes:
+      axis: Y
+      units: m
+  xu:
+    spacing: dxx  # or a numeric value
+    position: end
+    attributes:
+      axis: X
+      units: m
+  yv: 
+    spacing: dyy  # or a numeric value
+    position: end
+    attributes:
+      axis: Y
+      units: m
