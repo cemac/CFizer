@@ -25,8 +25,8 @@ def performance_time(func):
 	return wrapper
 
 
-class NC_Dir:
-    def __init__(self, directory: str):
+class MONC_Parser:
+    def __init__(self, directory: str, dim_bins: list|tuple|set = None):
         self.source_dir = os.path.abspath(directory)
         
         # Check directory is valid
@@ -50,49 +50,181 @@ class NC_Dir:
 
         # Target directory for processed files should be sibling of source directory,
         # so it doesn't interfere with scanning for files to be processed.
+        # Ideally allow user to specify where processed files should go.
         self.target_dir =  os.path.join(
             os.path.dirname(directory),
             f'{os.path.basename(directory)}+processed'
         )
         if not os.path.exists(self.target_dir):
             os.makedirs(self.target_dir)
-        
-        # Set up dictionary to contain filepaths, categorized by number of dimensions in data.
-        self.source = {v: [] for v in set(DIM_GROUPS)}
-        #     '0+1d': [],
-        #     '2d': [],
-        #     '3d': []
-        # }
-        
-        # Set up dictionary to contain filepaths of output files.
-        # 3d doesn't need to be tracked, as each output file is produced from only one input file.
-        # However, for flexibility and extensibility, keep a list of all
-        # target files for each dimensionality.
-        self.stem = {v: None for v in set(DIM_GROUPS)}
-        # {
-        #     '0+1d': None,
-        #     '2d': None
-        # }
+
+        # Separate MONC outputs from other NC files:
+        self.non_monc = []
+        i = 0
+        while i < len(self.nc_files):
+            if not is_monc_file(
+                os.path.join(self.source_dir, self.nc_files[i])
+            ):
+                self.non_monc.append(self.nc_files.pop(i))
+            else:
+                i += 1
+
+        if dim_bins is not None:
+            if not isinstance(dim_bins, (list, tuple, set)):
+                raise TypeError('dim_bins must be a sequence containing category names based on number of dimensions (not counting time dimension).')
+            self.dim_bins = dim_bins
+            # Set up dictionary to contain filepaths classified by number of dimensions
+            self.by_dim = {}
+            # Set up dictionary to contain filepaths of output files.
+            self.stem = {name: None for name in set(self.dim_bins)}
+            try:
+                self.sort_by_dims()
+            except ValueError as e:
+                raise e
+
+            
+        # # Set up dictionary to contain filepaths, categorized by number of dimensions in data.
+        # self.source = {v: [] for v in set(DIM_GROUPS)}
+        # #     '0+1d': [],
+        # #     '2d': [],
+        # #     '3d': []
+        # # }
         
         self._time_units = None
-        self.reference_datetime = []
+        # self._reference_datetime = []
+
+        if CONFIG['missing_data']['time_units']['use_input_file']:
+            # Attempt to obtain missing time unit data from input file(s)
+            time_units_from_input = self.get_input_data(CONFIG['missing_data']['time_units']['input_file_variable'])
+            if len(time_units_from_input.keys()) > 1:
+                # TODO: Work out how to pick one set of data
+                time_units_from_input = list(time_units_from_input.values())[0]
+            else:
+                time_units_from_input = list(time_units_from_input.values())[0]
+            if 'units' not in time_units_from_input:
+                # Use fall-back derivation of time units.
+                pass
+            if 'calendar' not in time_units_from_input:
+                time_units_from_input['calendar'] = None
+            try:
+                self.set_time_units(units=time_units_from_input['units'],
+                                    calendar=time_units_from_input['calendar'])
+            except Exception as e:
+                raise e
+        elif CONFIG['missing_data']['time_units']['calendar'] is not None:
+            try:
+                self.set_time_units(calendar=CONFIG['missing_data']['time_units']['calendar'])
+            except Exception as e:
+                raise e
         
-    @property
-    def time_units(self):
+    def get_time_units(self):
         return None if self._time_units is None else self._time_units.formatted()
     
-    @time_units.setter
-    def time_units(self, units: Units):
+    def get_calendar(self):
+        try:
+            return self._time_units.calendar
+        except AttributeError:
+            return None
+        
+    def get_reference_date(self):
+        try:
+            return self._time_units.reftime
+        except AttributeError:
+            return None
+    
+    def set_time_units(self, 
+                   units: Units|str = None, 
+                   since: str|datetime = None, 
+                   calendar: str|Units = None):
         if not isinstance(units, Units):
-            raise TypeError('units must be of type cfunits.Units')
-        # try:
-        #     utils.decode_time_units(units)
-        # except ValueError as e:
-        #     raise e
+            if since is not None:
+                if isinstance(since, datetime):
+                    since = since.isoformat()
+                elif not isinstance(since, str):
+                    raise TypeError('since parameter must be string or datetime object.')
+                units = f'{units} since {since}'
+            if calendar is not None:
+                if isinstance(calendar, Units):
+                    calendar = calendar.calendar
+                elif not isinstance(calendar, str):
+                    raise TypeError('calendar parameter must be string or cfunits.Unit object.')
+            else:
+                calendar = CONFIG['missing_data']['time_units']['calendar']
+            try:
+                units = Units(units=units, calendar=calendar)
+            except Exception as e:
+                raise e
         if not units.isvalid:
             raise ValueError('Units are not valid according to CF convention.')
-        
         self._time_units = units
+
+    def sort_by_dims(self):
+        for filename, filepath in [(f, os.path.join(self.source_dir, f)) for f in self.nc_files]:
+            with xr.open_dataset(filepath, decode_times=False) as ds:
+                # Need to set decode_times=False to pull out time units as defined.
+                
+                # Find number of dimensions, which determines how file is merged/split
+                n_dims = get_n_dims(ds) - 1
+                if n_dims in self.by_dim:
+                    self.by_dim[n_dims].append(filepath)
+                else:
+                    self.by_dim[n_dims] = [filepath]
+
+                # Find longest common string in files of same dimension classification (as per dim_bins).
+                self.stem[self.dim_bins[n_dims]] = nc_basename(filename, self.stem[self.dim_bins[n_dims]])
+
+        if max(list(self.by_dim.keys())) > len(self.dim_bins):
+                raise ValueError('Not enough dimension categories specified.')
+                        
+    def get_input_data(self, var: str) -> dict:
+        '''Attempt to find specified input data in possible input file(s)'''
+        input_data = {}
+        for f in self.non_monc:
+            with xr.open_dataset(os.path.join(self.source_dir, f), decode_times=False) as ds:
+                try:
+                    input_data[f] = process_input(ds, var)
+                except TypeError as e:
+                    raise e
+                except KeyError:
+                    # Variable not found in prospective input file
+                    continue
+        return input_data
+
+    def process(self, n_dims: int):
+        dim_group = self.dim_bins[n_dims]
+        if n_dims == 3:
+            # split into individual time points
+            nc_split(self.by_dim[3])
+        else:
+            # merge time points
+            merged = nc_merge(self.by_dim[n_dims], globals_to_variables=CONFIG['global_to_variable'])
+
+
+def nc_merge(datasets: list, 
+             globals_to_variables: list|set|tuple) -> xr.Dataset:
+    # TODO: validate datasets & globals_to_variables
+    
+    for ds in datasets:
+        # Identify time variable
+        time_dim = [d for d in ds.dims.keys() if 'time' in d][0]
+
+        # Convert necessary global attributes to variables
+        for g in globals_to_variables:
+            name = g.replace(' ', '_')  # Replace this with a full "safe_string" function
+            data = utils.type_from_str(ds.attrs[g])
+            globals[g] = xr.DataArray(
+                name=name,
+                data=data,
+                coords={time_dim: [data]},
+                dims=[time_dim]
+            )
+        ds.assign({name: array for name, array in globals.items()})
+
+
+def nc_split(ds: xr.Dataset) -> tuple:
+    # TODO: validate ds
+
+    pass
 
 
 def nc_iterator(directory: str) -> None:
@@ -101,19 +233,9 @@ def nc_iterator(directory: str) -> None:
     '''
     
     try:
-        nc_dir = NC_Dir(directory)
+        nc_dir = MONC_Parser(directory)
     except OSError as e:
         raise e
-
-    # # Check directory is valid
-    # if not os.path.exists(directory):
-    #     raise OSError(f'Directory {directory} not found')
-    
-    # nc_index = {
-    #     '0+1d': [],
-    #     '2d': [],
-    #     '3d': []
-    # }
 
     # # Iterate over all nc files in directory and any subdirectories
     # for nc_file in iglob(pathname='**/*.nc', root_dir=directory, recursive=True):
@@ -342,7 +464,18 @@ def nc_iterator(directory: str) -> None:
 
 
 
-                
+def parse_options_db(ds: xr.Dataset) -> dict:
+    # Get required info from options_database
+    required = set([var_list for var_list in (
+                    CONFIG['options_database']['required'],
+                    CONFIG['options_database']['reference_datetime'],
+                    CONFIG['options_database']['options_to_attrs']
+    )])
+    return {
+        k.decode('utf-8'): utils.type_from_str(v.decode('utf-8'))
+                for [k, v] in ds[CONFIG['options_database']['variable']].data
+                    if k.decode('utf-8') in required
+    }
 
 
 def nc_basename(*args) -> str:
@@ -351,19 +484,21 @@ def nc_basename(*args) -> str:
         strings.pop(strings.index(None))
     if len(strings) == 0:
         raise TypeError('At least one string must be supplied.')
-    if len(strings) == 1:
-        return strings[0]
-    # filenames = [os.path.basename(a) for a in args]
     s = strings[0]
-    for f in strings[1:]:
-        match = SequenceMatcher(a=s, b=f).find_longest_match()
-        s = s[match.a: match.a + match.size]
+    if len(strings) > 1:
+        for f in strings[1:]:
+            match = SequenceMatcher(a=s, b=f).find_longest_match()
+            s = s[match.a: match.a + match.size]
     return s
 
 
-def process_monc(ds: xr.Dataset) -> xr.Dataset:
+# def process_monc(ds: xr.Dataset) -> xr.Dataset:
+def process_monc(parser: MONC_Parser):
     '''
     '''
+    
+
+
     # Find number of dimensions, which determines how file is merged/split
     n_dims = get_n_dims(ds)
     # print(n_dims, 'dimension(s) found')
@@ -395,23 +530,31 @@ def split_time_series(ds: xr.Dataset) -> list:
     pass
 
 
-def process_input(ds: xr.Dataset) -> dict:
+def process_input(ds: xr.Dataset, var: str) -> dict:
     '''
     Returns dictionary containing useful input data, if successfully parsed.
     Returns empty dictionary if content does not match expected input data.
     '''
-    (units, calendar) = (None, None)
+    if not isinstance(var, str):
+        raise TypeError('Variable to look for in input file must be supplied as a string.')
+    
+    if var not in ds.variables:
+        raise KeyError(f'{var} not in dataset variables.')
 
-    # Refer to config file, for whether or not to use time units & calendar,
-    # and which variable to check
-    if CONFIG['time_units']['use_input_file']:
-        try:
-            units = ds.variables[CONFIG['time_units']['input_file_variable']].attrs['units']
-            calendar = ds.variables[CONFIG['time_units']['input_file_variable']].attrs['calendar']
-        except:
-            pass
+    return ds[var].attrs
+
+    # (units, calendar) = (None, None)
+
+    # # Refer to config file, for whether or not to use time units & calendar,
+    # # and which variable to check
+    # if CONFIG['time_units']['use_input_file']:
+    #     try:
+    #         units = ds.variables[CONFIG['time_units']['input_file_variable']].attrs['units']
+    #         calendar = ds.variables[CONFIG['time_units']['input_file_variable']].attrs['calendar']
+    #     except:
+    #         pass
             
-    return {'time units': units, 'time calendar': calendar}
+    # return {'time units': units, 'time calendar': calendar}
 
 
 def is_monc(ds: xr.Dataset) -> bool:
@@ -421,46 +564,34 @@ def is_monc(ds: xr.Dataset) -> bool:
     return 'MONC time' in ds.attrs
 
 
+def is_monc_file(filepath: str) -> bool:
+    if not os.path.exists(filepath):
+        raise OSError(f'Filepath not found: {filepath}')
+    try:
+        with xr.open_dataset(filepath, decode_times=False) as ds:
+            return is_monc(ds)
+    except Exception as e:
+        raise e
+
+
 def get_n_dims(ds: xr.Dataset) -> int:
     return max([len(ds[v].dims) for v in ds.variables if v != CONFIG['options_database']['variable']])
 
 
-def get_monc_files(directory: str) -> dict:
-    '''
-    Raises OSError if directory not found.
-    '''
-    # Check directory is valid
-    if not os.path.exists(directory):
-        raise OSError(f'directory {directory} not found')
-
-    # Get list of all nc files in directory and any subdirectories
-    nc_files = glob(pathname='**/*.nc', root_dir=directory, recursive=True)
-    # print(len(nc_files), 'files found')
-    # print(nc_files)
-    monc_files = []
-    other_files = []
-    
-    # discard any file not matching pattern for MONC output
-    for f in nc_files:
-        filepath = os.path.join(directory, f)
-        print(filepath)
-        with xr.open_dataset(filepath) as ds:
-            monc_files.append(filepath) if 'MONC time' in ds.attrs else other_files.append(filepath)
-                
-    return {'monc': monc_files, 'other': other_files}
-
-
 def test():
-    print('Testing NC directory parser:')
-    fail_dir = '/spam/eggs/beans/andspam'
-    pass_dir = os.path.join(os.path.dirname(app_dir), 'test_data')
-    for d in [fail_dir, pass_dir]:
-        print(f'trying to fetch nc files from {d}...')
-        try:
-            # print(get_monc_files(d))#
-            nc_iterator(d)
-        except OSError as e:
-            print(e)
+    # print('Testing NC directory parser:')
+    # fail_dir = '/spam/eggs/beans/andspam'
+    # pass_dir = os.path.join(os.path.dirname(app_dir), 'test_data')
+    # for d in [fail_dir, pass_dir]:
+    #     print(f'trying to fetch nc files from {d}...')
+    #     try:
+    #         # print(get_monc_files(d))#
+    #         nc_iterator(d)
+    #     except OSError as e:
+    #         print(e)
+    cf_dir = MONC_Parser(os.path.join(os.path.dirname(app_dir), 'test_data'), dim_bins=DIM_GROUPS)
+    process_monc(cf_dir)
+    
 
     # print('Testing nc_basename:')
     # a = 'd20200128_diagnostic_0d_172800.nc'

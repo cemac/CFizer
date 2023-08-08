@@ -2,10 +2,38 @@ import re
 from datetime import timedelta, datetime
 
 def init_vocab():
+    '''
+    This will look for existing vocabulary.yml, but if it doesn't find, will 
+    look for Excel file to convert, if it contains the right columns (fields).
+    It will attempt to fill any missing data based on CF conventions, including:
+    - inferring cell_method from presence of terms such as "mean" and "max" in variable name.
+    - looking up standard_name, if supplied.
+    It will check any units given using `cfunits`, and check against CF standard names definitions.
+
+    The intention is to compile a full lookup table, such that the main 
+    application does not need to infer anything or look anywhere else for the 
+    required data.
+    '''
     pass
 
 def options_db_to_global_attrs():
     pass
+
+
+def is_sequence(object):
+    return isinstance(object, (
+        list,
+        set,
+        tuple,
+        range
+    ))
+
+
+def is_sequence_of(object, type: type):
+    if is_sequence(object):
+        return all([isinstance(element, type) for element in object])
+    else:
+        return False
 
 
 def type_from_str(string: str):

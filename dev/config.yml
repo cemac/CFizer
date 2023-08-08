@@ -5,6 +5,7 @@ global_attributes:
   comment: None
 global_to_variable:
   - MONC timestamp
+  - created
 options_database:
   variable: options_database
   dimensions:
@@ -13,7 +14,7 @@ options_database:
   required:
   - dxx
   - dyy
-  reference_datetime:
+  reftime​:
   - rad_start_year
   - rad_start_day
   - rad_start_time  # Assume this is in seconds
@@ -65,34 +66,38 @@ options_database:
   - "mcc_ozone_profile"
   - "dephy_forcings_enabled"
   - "dephy_file"
-time_units: 
-  use_input_file: True
-  input_file_variable: time
-  base_unit: seconds  # Ignored if use_input_file is True
-  ref_datetime: options_database  # or ISO format date-time string; ignored if use_input_file is True
-  calendar: gregorian # or standard. See https://cf-units.readthedocs.io/en/stable/utilities.html#cf_units.CALENDARS. Ignored if use_input_file is True and valid value found there.
-add_dimensions:
-  x:
-    spacing: dxx  # or a numeric value
-    position: mid  # end
-    attributes:
-      axis: X
-      units: m
-  y: 
-    spacing: dyy  # or a numeric value
-    position: mid  # end
-    attributes:
-      axis: Y
-      units: m
-  xu:
-    spacing: dxx  # or a numeric value
-    position: end
-    attributes:
-      axis: X
-      units: m
-  yv: 
-    spacing: dyy  # or a numeric value
-    position: end
-    attributes:
-      axis: Y
-      units: m
+
+input_file:
+  reftime​: time
+# missing_data:
+#   time_units:
+#     use_input_file: True
+#     input_file_variable: time
+    # base_unit: seconds  # Ignored if use_input_file is True.  # Remove: should be in vocabulary.
+    # ref_datetime: options_database  # or ISO format date-time string; ignored if use_input_file is True.  # Remove: specify in vocabulary.
+    # calendar: gregorian # or standard. See https://cf-units.readthedocs.io/en/stable/utilities.html#cf_units.CALENDARS. Ignored if use_input_file is True and valid value found there.
+  # dimensions:
+  #   x:
+  #     spacing: options_database: dxx  # or a numeric value
+  #     position: centres
+  #     attributes:
+  #       axis: X
+  #       units: m
+  #   y: 
+  #     spacing: options_database: dyy  # or a numeric value
+  #     position: centres
+  #     attributes:
+  #       axis: Y
+  #       units: m
+  #   xu:
+  #     spacing: options_database: dxx  # or a numeric value
+  #     position: edges
+  #     attributes:
+  #       axis: X
+  #       units: m
+  #   yv: 
+  #     spacing:    options_database: dyy  # or a numeric value
+  #     position:   edges
+  #     attributes:
+  #       axis:     Y
+  #       units:    m

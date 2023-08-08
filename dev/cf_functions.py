@@ -3,15 +3,7 @@ import re
 from datetime import datetime as dt
 import cfunits
 import os
-
-
-def is_sequence(object):
-    return isinstance(object, (
-        list,
-        set,
-        tuple,
-        range
-    ))
+from utils import is_sequence, is_sequence_of
 
 
 def merge_ds(ds1: xr.Dataset, ds2: xr.Dataset) -> xr.Dataset:
@@ -27,6 +19,8 @@ def coord_from_dim(
     '''
     '''
     # TODO: ensure all arguments are valid
+    if not is_sequence(data):
+        raise TypeError
 
     if dim in ds.coords:
         # Add any missing information, or update as required
@@ -34,7 +28,14 @@ def coord_from_dim(
             for a, v in attrs.items():
                 ds[dim].attrs[a] = v
         if not all(ds[dim].data == data):
-            ds[dim] = (dim, data, ds[dim].attrs)
+            attrs = ds[dim].attrs
+            try:
+                ds.update({dim: (dim, data)})
+            except ValueError as e:
+                raise e
+            for a, v in attrs.items():
+                ds[dim].attrs[a] = v
+            
     else:
         new_var = xr.Variable(dims=dim, attrs=attrs, data=data)
         ds = ds.assign(variables={dim: new_var})
@@ -48,15 +49,18 @@ def coord_points(n: int, delta: float|int, first: float|int = 0) -> list:
 
 
 def change_dims(
-        ds: xr.Dataset, data_var: str, new_dims: list|tuple|set
+        ds: xr.Dataset, data_var: str, dim_changes: dict
 ) -> xr.Dataset:
     '''
     Change the dimensions of a data variable.
+    ds: xarray.Dataset
+    dim_changes: dictionary mapping existing dimension names to new dimension names (e.g. {'x': 'xu', 'y': 'yu'})
+    Only specified dimensions are changed; others are left as is.
     '''
-    # TODO: Check new_dims is valid type, and check each value
+    # TODO: Check dim_changes is valid type, and check each key
     # is an existing dim.
 
-    ds[data_var] = (new_dims, ds[data_var].data, ds[data_var].attrs)
+    ds[data_var] = ds[data_var].swap_dims(dim_changes)  # (new_dims, ds[data_var].data, ds[data_var].attrs)
     return ds
 
 
@@ -81,12 +85,8 @@ def replace_dim(
         if not d in ds.dims:
             raise KeyError(f'{d} is not a dimension in dataset.')
     
-    # Get list of current dimensions & substitute in new one.
-    data_var_dims = list(ds[data_var].dims)
-    data_var_dims[data_var_dims.index(current_dim)] = new_dim
-
     # Re-assign data variable with new dimensions & all existing data.
-    ds[data_var] = (data_var_dims, ds[data_var].data, ds[data_var].attrs)
+    ds[data_var] = ds[data_var].swap_dims({current_dim: new_dim})  # (data_var_dims, ds[data_var].data, ds[data_var].attrs)
     return ds
 
 
