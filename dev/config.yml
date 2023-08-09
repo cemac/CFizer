@@ -4,20 +4,20 @@ global_attributes:
   references: None
   comment: None
 global_to_variable:
-  - MONC timestamp
+  - MONC timestep
   - created
 options_database:
-  variable: options_database
-  dimensions:
+  variable: options_database  # This is hard-coded in MONC, so not needed here
+  dimensions:  # These are hard-coded in MONC, so not needed here
   - number_options
   - kvp
-  required:
+  required:  # These are hard-coded in MONC, so not needed here
   - dxx
   - dyy
-  reftime​:
+  reftime:  # These won't be present in all files, so can't rely on
   - rad_start_year
   - rad_start_day
-  - rad_start_time  # Assume this is in seconds
+  - rad_start_time  # From MONC code, this is in hours after midnight.
   options_to_attrs:
   - "smagorinsky_enabled"
   - "damping_enabled"
@@ -67,8 +67,9 @@ options_database:
   - "dephy_forcings_enabled"
   - "dephy_file"
 
-input_file:
-  reftime​: time
+input_file:  # Can't rely on its being present, but can prompt for reftime if not found.
+  reftime: time
+
 # missing_data:
 #   time_units:
 #     use_input_file: True
