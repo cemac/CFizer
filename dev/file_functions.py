@@ -1,32 +1,17 @@
 import os
-from glob import glob, iglob
-import re
+from glob import glob
+# import re
 import xarray as xr
-from time import perf_counter
 from difflib import SequenceMatcher
-from setup import CONFIG, VOCABULARY, app_dir
-import utils
+from setup import CONFIG, VOCABULARY, DIM_GROUPS, app_dir
 from cfunits import Units
 from datetime import datetime, timedelta
 from cf_functions import *
-
-
-DIM_GROUPS = ['0+1d', '0+1d', '2d', '3d']
-
-
-def performance_time(func):
-	def wrapper(*args, **kwargs):
-		start_time = perf_counter()
-		response = func(*args, **kwargs)  # run the wrapped function
-		end_time = perf_counter()
-		duration = end_time - start_time
-		print(f"{func}({args}, {kwargs}) took {duration} seconds.")
-		return response
-	return wrapper
+from utils import performance_time, type_from_str
 
 
 class MONC_Parser:
-    def __init__(self, directory: str, dim_bins: list|tuple|set = None):
+    def __init__(self, directory: str, dim_groups: dict = None):
         self.source_dir = os.path.abspath(directory)
         
         # Check directory is valid
@@ -36,8 +21,6 @@ class MONC_Parser:
         # List of all NC files in target directory.
         # Don't scan subdirectories, as we want to treat each directory
         # as a collection.
-        # If there's a risk the list of files will be very large, better
-        # to make this a generator, using glob.iglob instead of glob.glob.
         self.nc_files = glob(
                 pathname='*.nc',
                 root_dir=directory,
@@ -48,9 +31,10 @@ class MONC_Parser:
         # don't know which files are MONC outputs.
         # self.stem_name = nc_basename(self.nc_files)
 
-        # Target directory for processed files should be sibling of source directory,
-        # so it doesn't interfere with scanning for files to be processed.
-        # Ideally allow user to specify where processed files should go.
+        # Target directory for processed files should be sibling of source 
+        # directory, so it doesn't interfere with option of recursive scanning
+        # for files to be processed.
+        # TODO: Ideally allow user to specify where processed files should go.
         self.target_dir =  os.path.join(
             os.path.dirname(directory),
             f'{os.path.basename(directory)}+processed'
@@ -58,7 +42,8 @@ class MONC_Parser:
         if not os.path.exists(self.target_dir):
             os.makedirs(self.target_dir)
 
-        # Separate MONC outputs from other NC files:
+        # Separate MONC outputs from other NC files. Assume any non-MONC-outputs
+        # are input files.
         self.non_monc = []
         i = 0
         while i < len(self.nc_files):
@@ -69,33 +54,49 @@ class MONC_Parser:
             else:
                 i += 1
 
-        if dim_bins is not None:
-            if not isinstance(dim_bins, (list, tuple, set)):
-                raise TypeError('dim_bins must be a sequence containing category names based on number of dimensions (not counting time dimension).')
-            self.dim_bins = dim_bins
+        if dim_groups is not None:
+            if not isinstance(dim_groups, dict):
+                raise TypeError(
+                    '''
+                    dim_groups must be a dictionary with the layout:
+                    {number_of_dimensions: {
+                        'action': 'merge'|'split',
+                        'group': '<group_name>'
+                        }
+                    }
+                    where number_of_dimensions excludes time.
+                    ''')
+            # self.dim_groups = dim_groups
             # Set up dictionary to contain filepaths classified by number of dimensions
-            self.by_dim = {}
+            self.by_dim = {
+                n: options for n, options in dim_groups.items()
+            }
+            [
+                options.update({'datasets': []}) 
+                for options in self.by_dim.values()
+            ]
             # Set up dictionary to contain filepaths of output files.
-            self.stem = {name: None for name in set(self.dim_bins)}
+            self.stem = {}  # {name: None for name in set(self.dim_groups)}
             try:
                 self.sort_by_dims()
-            except ValueError as e:
+            except IndexError as e:
                 raise e
+            except Exception as e:
+                raise e
+        else:
+            # If self.dim_groups or self.by_dim is None, files are neither merged nor split.
+            # self.dim_groups = None
+            self.by_dim = None
+            # self.datasets = (xr.open_dataset(os.path.join(self.source_dir, f)) for f in self.nc_files)  # generator comprehension
 
-            
-        # # Set up dictionary to contain filepaths, categorized by number of dimensions in data.
-        # self.source = {v: [] for v in set(DIM_GROUPS)}
-        # #     '0+1d': [],
-        # #     '2d': [],
-        # #     '3d': []
-        # # }
-        
         self._time_units = None
         # self._reference_datetime = []
 
-        if CONFIG['missing_data']['time_units']['use_input_file']:
-            # Attempt to obtain missing time unit data from input file(s)
-            time_units_from_input = self.get_input_data(CONFIG['missing_data']['time_units']['input_file_variable'])
+        if 'reftime' in CONFIG['input_file']:
+            # Attempt to obtain time unit data from input file(s)
+            time_units_from_input = self.get_input_data(
+                CONFIG['input_file']['reftime']
+            )
             if len(time_units_from_input.keys()) > 1:
                 # TODO: Work out how to pick one set of data
                 time_units_from_input = list(time_units_from_input.values())[0]
@@ -109,11 +110,6 @@ class MONC_Parser:
             try:
                 self.set_time_units(units=time_units_from_input['units'],
                                     calendar=time_units_from_input['calendar'])
-            except Exception as e:
-                raise e
-        elif CONFIG['missing_data']['time_units']['calendar'] is not None:
-            try:
-                self.set_time_units(calendar=CONFIG['missing_data']['time_units']['calendar'])
             except Exception as e:
                 raise e
         
@@ -135,7 +131,7 @@ class MONC_Parser:
     def set_time_units(self, 
                    units: Units|str = None, 
                    since: str|datetime = None, 
-                   calendar: str|Units = None):
+                   calendar: str|Units = 'standard'):
         if not isinstance(units, Units):
             if since is not None:
                 if isinstance(since, datetime):
@@ -143,13 +139,10 @@ class MONC_Parser:
                 elif not isinstance(since, str):
                     raise TypeError('since parameter must be string or datetime object.')
                 units = f'{units} since {since}'
-            if calendar is not None:
-                if isinstance(calendar, Units):
-                    calendar = calendar.calendar
-                elif not isinstance(calendar, str):
-                    raise TypeError('calendar parameter must be string or cfunits.Unit object.')
-            else:
-                calendar = CONFIG['missing_data']['time_units']['calendar']
+            if isinstance(calendar, Units):
+                calendar = calendar.calendar
+            elif not isinstance(calendar, str):
+                raise TypeError('calendar parameter must be string or cfunits.Unit object.')
             try:
                 units = Units(units=units, calendar=calendar)
             except Exception as e:
@@ -161,20 +154,33 @@ class MONC_Parser:
     def sort_by_dims(self):
         for filename, filepath in [(f, os.path.join(self.source_dir, f)) for f in self.nc_files]:
             with xr.open_dataset(filepath, decode_times=False) as ds:
-                # Need to set decode_times=False to pull out time units as defined.
+                # Need to set decode_times=False to pull out time units as 
+                # defined.
                 
-                # Find number of dimensions, which determines how file is merged/split
+                # Find number of dimensions
                 n_dims = get_n_dims(ds) - 1
+                
                 if n_dims in self.by_dim:
-                    self.by_dim[n_dims].append(filepath)
+                    self.by_dim[n_dims]['datasets'].append(filepath)
                 else:
-                    self.by_dim[n_dims] = [filepath]
+                    raise IndexError(f'{filename} has {n_dims} non-time dimensions, while maximum expected is {max(list(self.by_dim.keys()))}.')
 
-                # Find longest common string in files of same dimension classification (as per dim_bins).
-                self.stem[self.dim_bins[n_dims]] = nc_basename(filename, self.stem[self.dim_bins[n_dims]])
+                # Find longest common string in files of same dimension classification (as per dim_groups).
+                if self.by_dim[n_dims]['group'] in self.stem:
+                    self.stem.update({
+                        self.by_dim[n_dims]['group']: 
+                        nc_basename(
+                            filename, 
+                            self.stem[self.by_dim[n_dims]['group']]
+                        )
+                    })
+                else:
+                    self.stem.update({
+                        self.by_dim[n_dims]['group']: filename
+                    })
 
-        if max(list(self.by_dim.keys())) > len(self.dim_bins):
-                raise ValueError('Not enough dimension categories specified.')
+        # if max(list(self.by_dim.keys())) > len(self.by_dim):
+        #         raise ValueError('Not enough dimension categories specified.')
                         
     def get_input_data(self, var: str) -> dict:
         '''Attempt to find specified input data in possible input file(s)'''
@@ -190,14 +196,31 @@ class MONC_Parser:
                     continue
         return input_data
 
-    def process(self, n_dims: int):
-        dim_group = self.dim_bins[n_dims]
-        if n_dims == 3:
-            # split into individual time points
-            nc_split(self.by_dim[3])
+    def process(self):
+        if self.by_dim is None:
+            # Make NC files CF compliant only.
+            pass
         else:
-            # merge time points
-            merged = nc_merge(self.by_dim[n_dims], globals_to_variables=CONFIG['global_to_variable'])
+            # for n_dims in self.by_dim.keys():
+            #     # Split or merge files according to parser.by_dim['action']
+            #     if self.by_dim[n_dims]['action'] == 'merge':
+            #         # extract global attributes for each file, and assign each 
+            #         # as a `data_var` with dimension of time.
+            #         if CONFIG['global_to_variable'] is not None and len(CONFIG['global_to_variable'] > 0):
+            #             for ds in 
+
+            #         merge_time_series(to_merge=ds, merge_into=target_ds)
+            #     else:
+        
+            pass
+
+        # dim_group = self.dim_groups[n_dims]
+        # if n_dims == 3:
+        #     # split into individual time points
+        #     nc_split(self.by_dim[3])
+        # else:
+        #     # merge time points
+        #     merged = nc_merge(self.by_dim[n_dims], globals_to_variables=CONFIG['global_to_variable'])
 
 
 def nc_merge(datasets: list, 
@@ -211,7 +234,7 @@ def nc_merge(datasets: list,
         # Convert necessary global attributes to variables
         for g in globals_to_variables:
             name = g.replace(' ', '_')  # Replace this with a full "safe_string" function
-            data = utils.type_from_str(ds.attrs[g])
+            data = type_from_str(ds.attrs[g])
             globals[g] = xr.DataArray(
                 name=name,
                 data=data,
@@ -412,7 +435,7 @@ def nc_iterator(directory: str) -> None:
                 # Get required info from options_database
                 odb_req = CONFIG['options_database']
                 options_db = {
-                    k.decode('utf-8'): utils.type_from_str(v.decode('utf-8'))
+                    k.decode('utf-8'): type_from_str(v.decode('utf-8'))
                             for [k, v] in ds[odb_req['variable']].data
                                 if (k.decode('utf-8') in odb_req['required'] or
                                     k.decode('utf-8') in odb_req['options_to_attrs'])
@@ -472,7 +495,7 @@ def parse_options_db(ds: xr.Dataset) -> dict:
                     CONFIG['options_database']['options_to_attrs']
     )])
     return {
-        k.decode('utf-8'): utils.type_from_str(v.decode('utf-8'))
+        k.decode('utf-8'): type_from_str(v.decode('utf-8'))
                 for [k, v] in ds[CONFIG['options_database']['variable']].data
                     if k.decode('utf-8') in required
     }
@@ -497,25 +520,39 @@ def process_monc(parser: MONC_Parser):
     '''
     '''
     
-
-
-    # Find number of dimensions, which determines how file is merged/split
-    n_dims = get_n_dims(ds)
-    # print(n_dims, 'dimension(s) found')
-    
-    if n_dims < 3:
-        # Merge with other "0d" and "1d" files (time alone or time+altitude)
+    if parser.by_dim is None:
+        # Make NC files CF compliant only.
         pass
-    elif n_dims < 4:
-        # Merge with other "2d" files (time + x + y)
-
-        merge_time_series(new_ds=ds, merged_ds=merged_2d)
     else:
-        # Split "3d" (time + 3 spatial dimensions) into individual time points.
-        single_timepoints = split_time_series(ds)
-        for tp in single_timepoints:
-            # write new NetCDF file to target directory
-            pass
+        # for n_dims in 
+        # # Split or merge files according to parser.by_dim['action']
+        # if parser.by_dim['action'] == 'merge':
+        #     # extract global attributes for each file, and assign each as a 
+        #     # `data_var` with dimension of time.
+            
+        #     if CONFIG['global_to_variable'] is not None and len(CONFIG['global_to_variable'] > 0):
+                
+
+        #     merge_time_series(to_merge=ds, merge_into=target_ds)
+        pass
+
+    # # Find number of dimensions, which determines how file is merged/split
+    # n_dims = get_n_dims(ds)
+    # # print(n_dims, 'dimension(s) found')
+    
+    # if n_dims < 3:
+    #     # Merge with other "0d" and "1d" files (time alone or time+altitude)
+    #     pass
+    # elif n_dims < 4:
+    #     # Merge with other "2d" files (time + x + y)
+
+    #     merge_time_series(new_ds=ds, merged_ds=merged_2d)
+    # else:
+    #     # Split "3d" (time + 3 spatial dimensions) into individual time points.
+    #     single_timepoints = split_time_series(ds)
+    #     for tp in single_timepoints:
+    #         # write new NetCDF file to target directory
+    #         pass
     
 
 def merge_time_series(to_merge: xr.Dataset, merge_into: xr.Dataset = None) -> xr.Dataset:
@@ -589,8 +626,10 @@ def test():
     #         nc_iterator(d)
     #     except OSError as e:
     #         print(e)
-    cf_dir = MONC_Parser(os.path.join(os.path.dirname(app_dir), 'test_data'), dim_bins=DIM_GROUPS)
-    process_monc(cf_dir)
+    data_dir = os.path.join(os.path.dirname(app_dir), 'test_data')
+    # parser = MONC_Parser(data_dir, dim_groups=DIM_GROUPS)
+    parser = MONC_Parser(data_dir)
+    parser.process()
     
 
     # print('Testing nc_basename:')

@@ -1,10 +1,24 @@
 import re
+from time import perf_counter
 from datetime import timedelta, datetime
+from cfunits import Units
 
-def init_vocab():
+
+def performance_time(func):
+	def wrapper(*args, **kwargs):
+		start_time = perf_counter()
+		response = func(*args, **kwargs)  # run the wrapped function
+		end_time = perf_counter()
+		duration = end_time - start_time
+		print(f"{func}({args}, {kwargs}) took {duration} seconds.")
+		return response
+	return wrapper
+
+
+def vocab_from_xls(filepath: str) -> dict:
     '''
-    This will look for existing vocabulary.yml, but if it doesn't find, will 
-    look for Excel file to convert, if it contains the right columns (fields).
+    This will for Excel file to convert to vocabulary dictionary, if it 
+    contains the right columns (fields).
     It will attempt to fill any missing data based on CF conventions, including:
     - inferring cell_method from presence of terms such as "mean" and "max" in variable name.
     - looking up standard_name, if supplied.
@@ -14,7 +28,12 @@ def init_vocab():
     application does not need to infer anything or look anywhere else for the 
     required data.
     '''
-    pass
+    import openpyxl as xl
+
+    VOCABULARY = {}
+    # 
+    return VOCABULARY
+
 
 def options_db_to_global_attrs():
     pass

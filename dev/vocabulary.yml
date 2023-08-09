@@ -3,7 +3,7 @@
     updated_name: time
     new_units: s
     standard_name: time
-    reftime​: options_database
+    reftime: options_database
   VWP_mean:
     existing_units:   'kg/m^2'
     long_name:        water vapor path
@@ -13,19 +13,19 @@
     updated_name:     time
     new_units:        s
     standard_name:    time
-    reftime​: options_database
+    reftime: options_database
   prefn:
     existing_units:   hPa
     new_units:        Pa
-    standard_name:    reftime​_pressure
-    long_name:        reftime​ Pressure
+    standard_name:    reftime_pressure
+    long_name:        reftime Pressure
 
 2d:
   time_series_1800_1800:
     updated_name:     time
     new_units:        s
     standard_name:    time
-    reftime​: options_database
+    reftime: options_database
   surface_precip:
     new_units:        'kg/m^2/s'
     standard_name:    precipitation_flux_ at_sea_level
@@ -36,7 +36,7 @@
     updated_name:     time
     new_units:        s
     standard_name:    time
-    reftime​: options_database
+    reftime: options_database
   w:
     new_units:        'm/s'
     long_name:        Wind Speed in z Direction
