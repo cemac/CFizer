@@ -7,6 +7,7 @@ from dataset_functions import *
 from variable_functions import *
 from difflib import SequenceMatcher
 from utils import type_from_str, generate_coords, stem_str
+from numpy import nan
 
 
 class DirectoryParser:
@@ -80,18 +81,18 @@ class DirectoryParser:
                 else:
                     self.input_files.append(filepath)
 
-    def merge_by_group(self):
-        to_merge = {}
-        for name, action in self.DIM_ACTIONS.items():
-            if action == 'merge':
-                merge_group = [group for group in self.by_dim.values() if group.name == name]
-                if len(merge_group) > 1:
-                    to_merge[name] = merge_group
-                else:
-                    to_merge.pop(name)
-        merged = {}
-        for name, merge_list in to_merge.items():
-            merged[name] = merge_ds_groups(merge_list)
+    # def merge_by_group(self):
+    #     to_merge = {}
+    #     for name, action in self.DIM_ACTIONS.items():
+    #         if action == 'merge':
+    #             merge_group = [group for group in self.by_dim.values() if group.name == name]
+    #             if len(merge_group) > 1:
+    #                 to_merge[name] = merge_group
+    #             else:
+    #                 to_merge.pop(name)
+    #     merged = {}
+    #     for name, merge_list in to_merge.items():
+    #         merged[name] = merge_ds_groups(merge_list)
 
     def datasets(self):
         # Generator
@@ -99,6 +100,9 @@ class DirectoryParser:
     
     def cfize(self):
         for dim, group in self.by_dim.items():
+            # First, merge time-points within dimension group, if required.
+            # Any splitting into separate time points is done after other 
+            # processing.
             if group.action == 'merge':
                 # extract global attributes for each file, and assign each as a `data_var` with dimension of time.
                 for ds in group.datasets():
@@ -106,15 +110,6 @@ class DirectoryParser:
 
                 # Merge all datasets in group to create single time-series dataset
                 group.process()
-
-                # if dim > 0:
-                #     # Check whether dimension group below has same name, & therefore should be merged.
-                #     if group.name == self.by_dim[dim - 1].name:
-                #         # merge output dataset with that of dimension below
-                #         pass
-            else:
-                # 
-                pass
         
         # Merge any groups with the same name: these comprise different
         # dimensions that should be merged, i.e. merging the 0d and 1d
@@ -129,36 +124,52 @@ class DirectoryParser:
                 # Perform the merge
                 self.processed[group].process()
             else:
+                # If only one group per group name, point self.processed to that group for ongoing processing.
                 self.processed[group] = groups_to_merge[0]
 
-        
-        
-        
+        # Update global attributes and variables. Split time-points if required.
+        for name, group in self.processed.items():
+            if group.action == 'split':
+                # Process each dataset in group. Group won't have a processed attribute yet.
+                to_process = group.datasets
+            else:
+                # Process group.processed only
+                to_process = [MoncDataset(dataset=group.processed)]
+            for ds in to_process:
+                # Convert required `options_database` items to global attrs.
+                ds = ds.options.to_attrs()  # TODO: check this actually updates the dataset!
+
+                # Add CF-required globals, using data from config file.
+                ds.add_cf_attrs()
+
+                # add missing coordinate variables
+                ds.missing_coords()
+
+                # Apply CF-required updates to all variables, using vocabulary.
+                ds.cf_var()
             
-# class SubGroup:
-#     def __init__(self, *args) -> None:
-#         if len(args) <= 1 or not all(
-#             [isinstance(arg, DsGroup) for arg in args]):
-#             raise TypeError('Expecting a sequence of DsGroup objects.')
-#         if not all([len(group.processed) == 1 for group in args]):
-#             raise TypeError("Each DsGroup.processed attribute must contain a single dataset.")
-        
-#         self.ds = [group.processed for group in args]
-#         # elif all([isinstance(arg, xr.MoncDataset) for arg in args]):
-#         #     self.ds = [arg.ds for arg in args]
-#         # elif all([isinstance(arg, xr.Dataset) for arg in args]):
-#         #     self.ds = args
-#         # else:
-#         #     raise TypeError('Valid arguments must be DsGroup types.')
-        
-#         self.stem = stem_str([group.stem for group in args])
-#         self.processed = None
-        
-#     def merge_dims(self):
-#         self.processed = None
+                if group.action == 'split':
+                    # Remove any attribute contained in ds.do_not_duplicate.
 
+                    # Separate datasets by timepoint
+                    n_ds = group.process()
 
+                    # Finish processing the new datasets created by split.
+                    for new_ds in group.processed[-n_ds:]:
+                        # update or drop `Previous diagnostic write at` & `MONC time`.
 
+                        # Save each ds as NetCDF file, using required lossless compression if specified.
+
+                        # Run each file through cf-checker
+
+                        pass
+                
+                else:
+                    # Save resulting single dataset as NetCDF, using required lossless compression if specified.
+
+                    # Run each file through cf-checker
+
+                    pass
 
 class DsGroup:
     '''
@@ -252,6 +263,7 @@ class DsGroup:
     def split_times(self):
         split = None
         self.processed += split
+        return len(split)
 
     def merge_groups(self):
         self.processed = merge_dimensions(*self.to_merge)
@@ -401,6 +413,7 @@ class MoncDataset:
             for g in attr:
                 name = g.replace(' ', '_')  # TODO: Replace this with a full "safe_string" function
                 if name in self.do_not_duplicate:
+                    # TODO: this should assign `nan` to each data point except last, and then set coords as per other case below.
                     data = type_from_str(self.ds.attrs[g])
                     coords = (last_time_point,)
                 else:
@@ -487,11 +500,30 @@ class MoncDataset:
             self.ds = ds.assign(variables={dim: new_var})
         
     def cf_var(self, variable: str = None) -> None:
+        # If no variable specified, attempt to process all variables present.
+        if not variable:
+            [self.cf_var(var) for var in self.ds.variables.keys() if var != OPTIONS_DATABASE['variable']]
+
         # Check variable exists in self.ds.
+        if not variable in self.ds.variables.keys():
+            raise KeyError(f'{variable} not a variable of dataset.')
 
         # Find variable in vocabulary
+        try:
+            updates = VOCABULARY[variable]
+        except KeyError:
+            # TODO: attempt to find in `standard_names` table
+            raise KeyError(f'{variable} not found in vocabulary.')
 
         # Apply changes to variable where necessary
+        # Update dims/coordinates (xr.DataArray.assign_coords)?
+        # Update/add attributes
+        # Update name
+        # If time, derive corrected units
+        # If coord variable, add axis
+        # Check units cf-compliant
+        # Check standard_name cf-compliant, if present
+        # perturbation to absolute
 
         # Check units are valid and apply standard formatting (e.g. kg/kg becomes 1)
         
