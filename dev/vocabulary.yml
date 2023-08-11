@@ -1,66 +1,36 @@
-0d:
-  time_series_300_1800:
-    updated_name: time
-    new_units: s
-    standard_name: time
-    reftime: options_database
-  VWP_mean:
-    existing_units:   'kg/m^2'
-    long_name:        water vapor path
-
-1d:
-  time_series_300_1800:
-    updated_name:     time
-    new_units:        s
-    standard_name:    time
-    reftime: options_database
-  prefn:
-    existing_units:   hPa
-    new_units:        Pa
-    standard_name:    reftime_pressure
-    long_name:        reftime Pressure
-
-2d:
-  time_series_1800_1800:
-    updated_name:     time
-    new_units:        s
-    standard_name:    time
-    reftime: options_database
-  surface_precip:
-    new_units:        'kg/m^2/s'
-    standard_name:    precipitation_flux_ at_sea_level
-    long_name:        Surface Precipitation
-
-3d:
-  time_series_1800_1800:
-    updated_name:     time
-    new_units:        s
-    standard_name:    time
-    reftime: options_database
-  w:
-    new_units:        'm/s'
-    long_name:        Wind Speed in z Direction
-  u:
-    new_units:        'm/s'
-    long_name:        Zonal Wind
-    standard_name:    eastward_wind
-    dimension_changes:
-      x: xu
-  x:
-    new_units:        m
-    long_name:        x-coordinate in Cartesian system (cell-centers)
-    axis:             X
-    spacing:
-      options_database: dxx  # or a numeric value
-    position:         centers
-  xu:
-    new_units:        m
-    long_name:        x-coordinate in Cartesian system (cell-edges)
-    axis:             X
-    spacing:
-      options_database: dxx  # or a numeric value
-    position:         edges
-
-# time:
-#   correct units: s
-#   MONC variable: /time_series.*/  # Either name, list of names or /regular expression between slashes/.
+time_series_300_1800:
+  updated_name:     time
+  new_units:        s
+  standard_name:    time
+VWP_mean:
+  long_name:        water vapor path
+prefn:
+  existing_units:   hPa
+  new_units:        Pa
+  standard_name:    reference_pressure
+  long_name:        Reference Pressure
+time_series_1800_1800:
+  updated_name:     time
+  new_units:        s
+  standard_name:    time
+surface_precip:
+  new_units:        'kg/m^2/s'
+  standard_name:    precipitation_flux_ at_sea_level
+  long_name:        Surface Precipitation
+w:
+  new_units:        'm/s'
+  long_name:        Wind Speed in z Direction
+u:
+  new_units:        'm/s'
+  long_name:        Zonal Wind
+  standard_name:    x_wind
+  dimension_changes:
+    x: xu
+x:
+  new_units:        m
+  long_name:        x-coordinate in Cartesian system (cell-centers)
+  axis:             X
+xu:
+  new_units:        m
+  long_name:        x-coordinate in Cartesian system (cell-edges)
+  axis:             X

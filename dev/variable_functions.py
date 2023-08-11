@@ -13,5 +13,7 @@ def cfize_variable(variable: xr.DataArray) -> xr.DataArray:
     pass
 
 
-def coord_points(number: int, spacing: float|int, midpoint: bool = False) -> list:
+def test():
     pass
+
+if __name__ == "__main__": test()

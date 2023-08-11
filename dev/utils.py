@@ -146,6 +146,25 @@ def datetime_from_relative_units(number: float|int, units: str) -> datetime:
     return ref_datetime + delta
 
 
+def generate_coords(number: int, 
+                    spacing: float|int, 
+                    midpoint: bool = False) -> list:
+    first = spacing/2 if midpoint else 0
+    return [(x * spacing + first) for x in range(number)]
+
+
+def stem_str(*args):
+        if not args:
+            raise ValueError('At least one string must be provided.')
+        filenames = [os.path.splitext(os.path.basename(path))[0] for path in args]  # If each path contains only a filename (no extension) this will still work.
+        stem = filenames[0]
+        if len(args) > 1:
+            for f in filenames[1:]:
+                match = SequenceMatcher(a=stem, b=f).find_longest_match()
+                stem = stem[match.a: match.a + match.size]
+        return stem
+    
+
 if __name__ == '__main__':
     value = 315960.
     units = 'seconds since 2020-01-25'

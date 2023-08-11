@@ -5,6 +5,35 @@ comment: None
 global_to_variable:
   - MONC timestep
   - created
+new_coordinate_variables:
+  x:
+    spacing: dxx
+    position: centre
+    attributes:
+      axis: X
+      units: m
+      long_name: x-coordinate in Cartesian system (cell-centers)
+  y:
+    spacing: dyy
+    position: centre
+    attributes:
+      axis: Y
+      units: m
+      long_name: y-coordinate in Cartesian system (cell-centers)
+  xu:
+    spacing: dxx
+    position: edge
+    attributes:
+      axis: X
+      units: m
+      long_name: x-coordinate in Cartesian system (cell-edges)
+  yu:
+    spacing: dyy
+    position: edge
+    attributes:
+      axis: Y
+      units: m
+      long_name: y-coordinate in Cartesian system (cell-edges)
 options_to_attrs:
   - "smagorinsky_enabled"
   - "damping_enabled"
@@ -53,3 +82,6 @@ options_to_attrs:
   - "mcc_ozone_profile"
   - "dephy_forcings_enabled"
   - "dephy_file"
+  - "lat"
+  - "lon"
+  - "z0"

@@ -1,10 +1,12 @@
 import xarray as xr
 from by_class import TimeUnits
 from setup import *
+from by_class import DsGroup
+from utils import stem_str
 
 
 def is_monc(dataset: xr.Dataset) -> bool:
-    pass
+    return MONC_ID_ATTR in dataset.attrs
 
 
 def get_n_dims(dataset: xr.Dataset) -> int:
@@ -13,14 +15,6 @@ def get_n_dims(dataset: xr.Dataset) -> int:
 
 def add_cf_attrs(dataset: xr.Dataset) -> xr.Dataset:
     pass
-
-
-def attr_to_var(dataset: xr.Dataset, attr: str = None) -> xr.Dataset:
-    if attr is None:
-        # convert all attributes to variables, using this function recursively.
-        for attr in dataset.attrs.keys():
-            attr_to_var(dataset=dataset, attr=attr)
-    # TODO
 
 
 def missing_coords(dataset: xr.Dataset) -> xr.Dataset:
@@ -41,15 +35,78 @@ def save_cf_dataset(dataset: xr.Dataset, filepath: str, compression=None):
     pass
 
 
-def merge_ds_groups(*args) -> xr.Dataset:
+def merge_ds_groups(*args) -> DsGroup:
+    # check each argument is of DsGroup type
+    if not all(isinstance(arg, DsGroup) for arg in args):
+        raise TypeError('Expecting a sequence of DsGroup objects.')
+    if not all([isinstance(group.processed, xr.Dataset) for group in args]):
+        raise TypeError("Each DsGroup.processed attribute must contain a single dataset.")
+    
+    # to_merge = [arg.processed[0] for arg in args]  # grab datasets
+    # Find matching time-points
+
+    # Check each DsGroup contains a single dataset in its processed attribute
+    if len(args) == 1:
+        return args[0].processed
+
+    if len(args) == 2:
+        # Find common stem
+        stem = stem_str(args[0].stem, args[1].stem)
+
+        # Find common name, if names don't already match
+        name = args[0].name if args[0].name == args[1].name else stem_str(
+            args[0].name, args[1].name
+        )
+
+        # Merge lists of filepaths from each group
+        filepaths = args[0].filepaths + args[1].filepaths
+
+        # To preserve original datasets, create a copy of one.
+        new_ds = args[0].processed.copy(deep=True)
+
+        # Merge 2nd dataset into the copy of the first.
+        new_ds.merge(
+            other=args[1].processed, 
+            join='exact', 
+            combine_attrs='drop_conflicts'
+        )
+
+        new_group = DsGroup(name=name, action='merge_dims', filepaths=filepaths)
+        new_group.process()
+
+        return args[0].processed.merge(
+            other=args[1].processed, 
+            join='exact', 
+            combine_attrs='drop_conflicts'
+        )
+    
+    else:
+        # call recursively until only 2 args to process
+        return merge_ds_groups(args[0], merge_ds_groups(*args[1:]))
+    
+
+
+def merge_dimensions(*args) -> xr.Dataset:
     '''
     This is designed to merge datasets whose time coordinates match, but contain
     mutually exclusive sets of data variables.
     '''
-    # TODO: check each argument is of DsGroup type & processed attribute of each contains one dataset.
-
-    # Check each DsGroup contains a single dataset in its processed attribute
+    
+    if not all(isinstance(arg, xr.Dataset) for arg in args):
+        raise TypeError('All parameters must be of type xarray.Dataset')
+    
     if len(args) == 1:
-        return args[0].processed[0]
-
-    pass
+        return args[0].copy(deep=True)
+    
+    if len(args) == 2:
+        new_ds = args[0].copy(deep=True)
+        new_ds.merge(
+            other=args[1], 
+            join='exact', 
+            combine_attrs='drop_conflicts'
+        )
+        return new_ds
+    
+    # call recursively until only 2 args to process
+    return merge_dimensions(args[0], merge_dimensions(*args[1:]))
+    

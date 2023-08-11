@@ -12,9 +12,7 @@ MONC_ID_ATTR = 'MONC timestep'
 
 OPTIONS_DATABASE = {
     'variable': 'options_database',
-    'dimensions': {'number_options', 'kvp'},
-    'dx': 'dxx',
-    'dy': 'dyy'
+    'dimensions': {'number_options', 'kvp'}
 }
 
 INPUT_FILE = {
@@ -45,8 +43,7 @@ VOCAB_FIELDS = {
     'units': None,
     'standard_name': None,
     'long_name': None,
-    'dimension_changes': {},
-    'reftime': {'options_database', 'input_file'}
+    'dimension_changes': {}
 }
 
 # Define dimensions by which files & their contained variables are to be 
