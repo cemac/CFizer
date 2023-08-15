@@ -207,7 +207,7 @@ class DirectoryParser:
 
                 # Add CF-required globals, using data from config file.
                 # TODO: pass in filename stem & name from relevant group, to use as title
-                title = group.stem + group.name if group.name not in group.stem else group.stem.strip('_ ,+')  # TODO: does this work for files being split? Does it matter if not, given splitting happens after here?
+                title = group.stem + group.name + '.nc' if group.name not in group.stem else group.stem.strip('_ ,+') + '.nc' # TODO: does this work for files being split? Does it matter if not, given splitting happens after here?
                 ds.add_cf_attrs(title=title)
 
                 # add missing coordinate variables
@@ -218,16 +218,19 @@ class DirectoryParser:
                 # if any variables might need converting from perturbations to
                 # absolutes.
                 ds.cf_var(time_units=self.time_units, parser=self)
+                if group.time_var != ds.time_var:
+                    group.time_var = ds.time_var
             
                 if group.action == 'split':
                     # Remove any attribute contained in ds.do_not_duplicate.
 
                     # Separate datasets by timepoint
-                    n_ds = group.process()
+                    n_ds = group.split_times(ds)
 
                     # Finish processing the new datasets created by split.
                     for new_ds in group.processed[-n_ds:]:
                         # update or drop `Previous diagnostic write at` & `MONC time`.
+                        
 
                         # Save each ds as NetCDF file, using required lossless compression if specified.
 
@@ -240,7 +243,15 @@ class DirectoryParser:
                     # TODO: encoding attribute to include required compression settings, some of which require engine to be specified too.
                     # TODO: compute allows build & write operations to be delayed using dask.
                     filepath = os.path.join(self.target_dir, ds.ds.title)
-                    ds.ds.to_netcdf(path=filepath)
+                    # TODO: encoding needs to be set, with each variable's encoding specified. Otherwise, _FillValue is applied to all, including coordinates, the latter contravening CF Conventions.
+                    encodings = {
+                        k:{
+                            'dtype': v.dtype,
+                            '_FillValue': None
+                        } for k, v in ds.ds.variables.items()
+                    }  # if k == 'options_database' or k in ds.ds.coords
+
+                    ds.ds.to_netcdf(path=filepath, encoding=encodings)
 
                     # TODO: Run each file through cf-checker
                     # This would be easiest if import the checker itself & can pass dataset or file to it.
@@ -256,135 +267,6 @@ class DirectoryParser:
         # ref_group = self.processed[ref_group_name]
         ref_ds = ref_group.processed
         return ref_ds[variable]
-
-
-class DsGroup:
-    '''
-    Each file in a DsGroup has the same variables, coordinates & dimensions.
-    '''
-    def __init__(self, 
-                 name: str = '', 
-                 action: str = None, 
-                 filepaths: list|set|tuple = None,
-                 groups: list|set|tuple = None) -> None:
-        
-        # TODO: validate parameters
-
-        if groups and all([isinstance(g, DsGroup) for g in groups]):
-            # Check each group has only one dataset in its processed attribute.
-            if not all([isinstance(group.processed, xr.Dataset) for group in groups]):
-                raise TypeError('To merge DsGroup objects, the processed attribute of each must contain a single xarray.Dataset object.')
-            # merge existing groups
-            self.name = stem_str(*[group.name for group in groups])
-            self.action = 'merge_groups'
-            self.process = self.merge_groups
-            self.stem = stem_str(*[group.stem for group in groups])
-            self.filepaths = []
-            for group in groups:
-                self.filepaths += group.filepaths
-            self.to_merge = [group.processed for group in groups]
-            self.processed = None
-            # self.process()
-        else:
-            self.name = name
-            self.action = action.lower()
-            if self.action == 'split':
-                self.process = self.split_times
-            elif self.action == 'merge':
-                self.process = self.merge_times
-            # elif self.action = 'merge_groups':
-            #     self.process = self.merge_groups
-            else:
-                self.process = self.keep_time_series
-            self.filepaths = filepaths if filepaths else []  # Cannot set default valueas an empty list  in arguments, or it assigns SAME empty list to every instance.
-            self.processed = []
-            self.stem = stem_str(*self.filepaths) if self.filepaths else None
-            # Although it would be best to verify that all member datasets have the same time variable, for now, just use the first one.
-            self.time_var = MoncDataset(filepath=self.filepaths[0]).time_var if self.filepaths else None
-            # Creating a generator for datasets is not appropriate, because it
-            # newly creates each MoncDataset every time it is used, meaning any
-            # changes made to a given MoncDataset object are lost afterwards.
-            self.datasets = [MoncDataset(path) for path in self.filepaths]
-
-    # def datasets(self):
-    #     '''
-    #     This returns a generator that yields the datasets contained in each
-    #     filepath.
-    #     '''
-    #     # return (xr.open_dataset(path, decode_times=False) for path in self.filepaths)
-    #     return (MoncDataset(path) for path in self.filepaths)
-
-    def add(self, filepath):
-        # TODO: validate filepath
-        self.filepaths.append(filepath)
-        self.stem = stem_str(filepath, self.stem)
-        self.datasets.append(MoncDataset(filepath))
-        if not self.time_var:
-            self.time_var = self.datasets[-1].time_var
-
-    # def stem_str(self, *args):
-    #     if not args:
-    #         raise ValueError('At least one filename/path must be provided.')
-    #     filenames = [os.path.splitext(os.path.basename(path))[0] for path in args]  # If each path contains only a filename (no extension) this will still work.
-    #     stem = filenames[0]
-    #     if len(args) > 1:
-    #         for f in filenames[1:]:
-    #             match = SequenceMatcher(a=stem, b=f).find_longest_match()
-    #             stem = stem[match.a: match.a + match.size]
-    #     return stem
-
-    def keep_time_series(self):
-        # copy all datasets/files into self.processed
-        self.processed = [ds for ds in self.datasets]
-
-    def merge_times(self):
-        '''
-        Using the option, data_vars='minimal', and merging only on
-        coords=[self.time_var] ensures the options_database variable is not
-        replicated for every time-point.
-        combine_attrs='drop_conflicts' can be used because any necessary global
-        attributes can be preserved by MoncDataset.attr_to_var().
-        '''
-        self.processed = xr.combine_by_coords(
-            [monc_ds.ds for monc_ds in self.datasets],
-            combine_attrs='drop_conflicts',
-            join='exact',
-            coords=[self.time_var],
-            data_vars='minimal'
-        )
-
-    def split_times(self):
-        split = None
-        self.processed += split
-        return len(split)
-
-    def merge_groups(self):
-        self.processed = merge_dimensions(*self.to_merge)
-        self.processed.attrs['title'] = self.name
-        
-
-# class DimGroup:
-#     def __init__(self, group: DsGroup) -> None:
-#         self.group = group
-
-#     def add_file(self, n_dims: int, filepath: str):
-#         if n_dims in self.groups:
-#             self.groups[n_dims].add(filepath)
-#         else:
-#             self.groups[n_dims] = DsGroup(
-#                 name=self.DIM_GROUPS[n_dims]['group'],
-#                 action=self.DIM_GROUPS[n_dims]['action'],
-#                 filepaths=[filepath]
-#             )
-
-#     def merge_dims(self, *args):
-#         to_merge = {}
-#         # Find dims to merge
-#         for group, action in self.DIM_ACTIONS.items():
-#             to_merge[group] = [n_dims for n_dims, name in self.DIM_GROUPS.items() if name == group and action == 'merge']
-#             if len(to_merge[group]) <= 1:
-#                 to_merge.pop(group)
-#         print(to_merge)
 
 
 class TimeUnits(Units):
@@ -697,6 +579,7 @@ class MoncDataset:
                 
                 # Assign axis attribute
                 self.ds[variable].attrs['axis'] = updates['axis'] if 'axis' in updates else 'T'
+
             else:
                 new_unit = Units(units=updates['units'])
                 if not new_unit.isvalid:
@@ -756,6 +639,8 @@ class MoncDataset:
         # Update name; this should be done last, so the existing name can still
         # be used as a key.
         if 'updated_name' in updates:
+            if variable == self.time_var:
+                self.time_var = updates['updated_name']
             self.ds = self.ds.rename({variable: updates['updated_name']})
 
         # perturbation to absolute
@@ -794,6 +679,144 @@ class MoncDataset:
 #             super().__init__(data=data_array.data, coords=data_array.coords, dims=data_array.dims, name=data_array.name, attrs=data_array.attrs, indexes=data_array.indexes)
 #         else:
 #             super().__init__(data=data, coords=coords, dims=dims, name=name, attrs=attrs, indexes=indexes, fastpath=fastpath)
+
+
+class DsGroup:
+    '''
+    Each file in a DsGroup has the same variables, coordinates & dimensions.
+    '''
+    def __init__(self, 
+                 name: str = '', 
+                 action: str = None, 
+                 filepaths: list|set|tuple = None,
+                 groups: list|set|tuple = None) -> None:
+        
+        # TODO: validate parameters
+
+        if groups and all([isinstance(g, DsGroup) for g in groups]):
+            # If group is to comprise multiple existing groups, check each 
+            # has only one dataset in its processed attribute.
+            if not all([isinstance(group.processed, xr.Dataset) for group in groups]):
+                raise TypeError('To merge DsGroup objects, the processed attribute of each must contain a single xarray.Dataset object.')
+            # merge existing groups
+            self.name = stem_str(*[group.name for group in groups])
+            self.time_var = groups[0].time_var
+            if not all([g.time_var == self.time_var for g in groups[1:]]):
+                raise ValueError('When attempting to combine groups, found mismatch in time variables.')
+            self.action = 'merge_groups'
+            self.process = self.merge_groups
+            self.stem = stem_str(*[group.stem for group in groups])
+            self.filepaths = []
+            for group in groups:
+                self.filepaths += group.filepaths
+            self.to_merge = [group.processed for group in groups]
+            self.processed = None
+            # self.process()
+        else:
+            self.name = name
+            self.action = action.lower()
+            if self.action == 'split':
+                self.process = self.split_times
+            elif self.action == 'merge':
+                self.process = self.merge_times
+            # elif self.action = 'merge_groups':
+            #     self.process = self.merge_groups
+            else:
+                self.process = self.keep_time_series
+            self.filepaths = filepaths if filepaths else []  # Cannot set default valueas an empty list  in arguments, or it assigns SAME empty list to every instance.
+            self.processed = []
+            self.stem = stem_str(*self.filepaths) if self.filepaths else None
+            # Although it would be best to verify that all member datasets have the same time variable, for now, just use the first one.
+            self.time_var = MoncDataset(filepath=self.filepaths[0]).time_var if self.filepaths else None
+            # Creating a generator for datasets is not appropriate, because it
+            # newly creates each MoncDataset every time it is used, meaning any
+            # changes made to a given MoncDataset object are lost afterwards.
+            self.datasets = [MoncDataset(path) for path in self.filepaths]
+
+    # def datasets(self):
+    #     '''
+    #     This returns a generator that yields the datasets contained in each
+    #     filepath.
+    #     '''
+    #     # return (xr.open_dataset(path, decode_times=False) for path in self.filepaths)
+    #     return (MoncDataset(path) for path in self.filepaths)
+
+    def add(self, filepath):
+        # TODO: validate filepath
+        self.filepaths.append(filepath)
+        self.stem = stem_str(filepath, self.stem)
+        self.datasets.append(MoncDataset(filepath))
+        if not self.time_var:
+            self.time_var = self.datasets[-1].time_var
+
+    # def stem_str(self, *args):
+    #     if not args:
+    #         raise ValueError('At least one filename/path must be provided.')
+    #     filenames = [os.path.splitext(os.path.basename(path))[0] for path in args]  # If each path contains only a filename (no extension) this will still work.
+    #     stem = filenames[0]
+    #     if len(args) > 1:
+    #         for f in filenames[1:]:
+    #             match = SequenceMatcher(a=stem, b=f).find_longest_match()
+    #             stem = stem[match.a: match.a + match.size]
+    #     return stem
+
+    def keep_time_series(self):
+        # copy all datasets/files into self.processed
+        self.processed = [ds for ds in self.datasets]
+
+    def merge_times(self):
+        '''
+        Using the option, data_vars='minimal', and merging only on
+        coords=[self.time_var] ensures the options_database variable is not
+        replicated for every time-point.
+        combine_attrs='drop_conflicts' can be used because any necessary global
+        attributes can be preserved by MoncDataset.attr_to_var().
+        '''
+        self.processed = xr.combine_by_coords(
+            [monc_ds.ds for monc_ds in self.datasets],
+            combine_attrs='drop_conflicts',
+            join='exact',
+            coords=[self.time_var],
+            data_vars='minimal'
+        )
+
+    def split_times(self, dataset: MoncDataset) -> int:
+        split = None
+        times = [t for t in dataset.ds[self.time_var].data]
+        split = [dataset.ds.sel({self.time_var: t}) for t in times]
+        if self.processed is not None:
+            self.processed += split
+        else:
+            self.processed = split
+        return len(split)
+
+    def merge_groups(self):
+        self.processed = merge_dimensions(*self.to_merge)
+        self.processed.attrs['title'] = self.name
+        
+
+# class DimGroup:
+#     def __init__(self, group: DsGroup) -> None:
+#         self.group = group
+
+#     def add_file(self, n_dims: int, filepath: str):
+#         if n_dims in self.groups:
+#             self.groups[n_dims].add(filepath)
+#         else:
+#             self.groups[n_dims] = DsGroup(
+#                 name=self.DIM_GROUPS[n_dims]['group'],
+#                 action=self.DIM_GROUPS[n_dims]['action'],
+#                 filepaths=[filepath]
+#             )
+
+#     def merge_dims(self, *args):
+#         to_merge = {}
+#         # Find dims to merge
+#         for group, action in self.DIM_ACTIONS.items():
+#             to_merge[group] = [n_dims for n_dims, name in self.DIM_GROUPS.items() if name == group and action == 'merge']
+#             if len(to_merge[group]) <= 1:
+#                 to_merge.pop(group)
+#         print(to_merge)
 
 
 def test():
