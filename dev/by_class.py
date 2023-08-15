@@ -7,7 +7,7 @@ from dataset_functions import *
 from variable_functions import *
 from difflib import SequenceMatcher
 from utils import type_from_str, generate_coords, stem_str
-from numpy import nan
+from numpy import nan, dtype
 from datetime import datetime
 
 
@@ -207,7 +207,7 @@ class DirectoryParser:
 
                 # Add CF-required globals, using data from config file.
                 # TODO: pass in filename stem & name from relevant group, to use as title
-                title = group.stem + group.name
+                title = group.stem + group.name if group.name not in group.stem else group.stem.strip('_ ,+')  # TODO: does this work for files being split? Does it matter if not, given splitting happens after here?
                 ds.add_cf_attrs(title=title)
 
                 # add missing coordinate variables
@@ -237,10 +237,26 @@ class DirectoryParser:
                 
                 else:
                     # Save resulting single dataset as NetCDF, using required lossless compression if specified.
+                    # TODO: encoding attribute to include required compression settings, some of which require engine to be specified too.
+                    # TODO: compute allows build & write operations to be delayed using dask.
+                    filepath = os.path.join(self.target_dir, ds.ds.title)
+                    ds.ds.to_netcdf(path=filepath)
 
-                    # Run each file through cf-checker
+                    # TODO: Run each file through cf-checker
+                    # This would be easiest if import the checker itself & can pass dataset or file to it.
+                    # CFChecker.checker(filepath)
 
-                    pass
+                    # Update group.processed with current version of dataset
+                    group.processed = ds.ds  # Expects xr.Dataset
+
+    def get_ref_var(self, variable: str) -> xr.DataArray:
+        if variable not in self.variables:
+            raise KeyError(f'{variable} not found in datasets processed.')
+        ref_group = self.variables[variable]
+        # ref_group = self.processed[ref_group_name]
+        ref_ds = ref_group.processed
+        return ref_ds[variable]
+
 
 class DsGroup:
     '''
@@ -542,7 +558,7 @@ class MoncDataset:
             if dim in CONFIG['new_coordinate_variables']:
                 # Get required information from config file, if available
                 config = CONFIG['new_coordinate_variables'][dim]
-                spacing = config['spacing']
+                spacing = self.options[config['spacing']]
                 midpoint = 'cent' in config['position'] or 'mid' in config['position']
                 for k, v in config['attributes'].items():
                     if k.lower() == 'units':
@@ -589,6 +605,7 @@ class MoncDataset:
         # If no variable specified, attempt to process all variables present.
         if not variable:
             [self.cf_var(variable=var, time_units=time_units, parser=parser) for var in self.ds.variables.keys() if var != OPTIONS_DATABASE['variable']]
+            return
 
         # Check variable exists in self.ds.
         if not variable in self.ds.variables.keys():
@@ -605,8 +622,9 @@ class MoncDataset:
             # TODO: attempt to find in `standard_names` table
             if 'standard_name' in self.ds[variable].attrs:
                 pass
-
-            raise KeyError(f'{variable} not found in vocabulary.')
+            
+            # Temporarily allow program to continue
+            return # raise KeyError(f'{variable} not found in vocabulary.')
 
         '''Apply changes to variable where necessary'''
         # TODO: split these into separate functions
@@ -735,29 +753,34 @@ class MoncDataset:
                 self.ds[variable].attrs['positive'] = updates['positive']
 
         
+        # Update name; this should be done last, so the existing name can still
+        # be used as a key.
+        if 'updated_name' in updates:
+            self.ds = self.ds.rename({variable: updates['updated_name']})
+
         # perturbation to absolute
         if 'perturbation_to_absolute' in updates and updates['perturbation_to_absolute']:
             # This will require the reference variable to be brought in from a different dataset, in most if not all cases.
+            # Any shared dimensions must have the same names, so this requires all processing to be done in ascending order of dimensions.
 
             if 'reference_variable' not in updates:
                 raise KeyError(f'{variable}: If perturbation_to_absolute is True, reference_variable must contain the name of the variable containing reference value(s).')
             if updates['reference_variable'] not in self.ds.variables:
                 # Look for reference variable in other dimension groups
                 if parser is not None:
-                    if updates['reference_variable'] in parser.variables:
-                        # TODO: Pull reference variable from relevant processed dataset.
-                        ref_group = parser.variables[
-                            updates['reference_variable']
-                        ]
-                raise KeyError(f'{variable}: Reference variable {updates["reference_variable"]} does not exist in dataset. If it is in another dataset, parser must be specified, to give access to the DirectoryParser.variables dictionary.')
-            
+                    try:
+                        ref_var = parser.get_ref_var(updates['reference_variable'])
+                    except AttributeError as e:
+                        raise AttributeError(f'{variable}: {e}')
+                else: 
+                    raise KeyError(
+                        f'{variable}: Reference variable {updates["reference_variable"]} does not exist in dataset. If it is in another dataset, parser must be specified, to give access to the DirectoryParser.variables dictionary.'
+                    )
+            else:
+                ref_var = self.ds[updates['reference_variable']]
+            absolute = self.ds[variable] + ref_var
+            self.ds[variable] = absolute
 
-        # Update name; this should be done last, so the existing name can still
-        # be used as a key.
-        if 'updated_name' in updates:
-            self.ds = self.ds.rename({variable: updates['updated_name']})
-
-        
         # return new version of variable's data array.
         pass
 

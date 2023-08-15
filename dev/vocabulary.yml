@@ -9,6 +9,11 @@ VWP_mean:
   dims:             
   - time_series_300_1800
   long_name:        water vapor path
+thref:
+  dims:
+                    - time_series_300_1800
+                    - zn
+  standard_name:    air_potential_temperature
 prefn:
   dims:             
   - time_series_300_1800
@@ -40,6 +45,17 @@ p:
   standard_name:    air_pressure
   perturbation_to_absolute: True
   reference_variable: prefn
+th:
+  dims:
+  - time_series_1800_1800
+  - x
+  - y
+  - zn
+  units:                    K
+  standard_name:            air_potential_temperature
+  long_name:                Potential Temperature
+  perturbation_to_absolute: True
+  reference_variable:       thref
 w:
   dims:
   - time_series_1800_1800

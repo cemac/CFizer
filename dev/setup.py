@@ -1,10 +1,12 @@
 '''
 TODO: This will ultimately move into __init__.py in app's base directory.
 TODO: throw verbose errors if config file not found; if vocabulary file or dict not found, look for Excel spreadsheet and pass to vocab_from_xls if found; if neither found, throw error.
-Author:         Cameron Wilson
-Centre:         Centre for Environmental Modelling and Computation
-Institution:    University of Leeds
+Name:           cfizer.py
+Author:         Cameron Wilson, CEMAC, University of Leeds
 Date:           August 2023
+File Revision:  ...
+CFizer Version: See __version__
+
 '''
 
 import yaml

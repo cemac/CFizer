@@ -58,13 +58,16 @@ def is_sequence_of(object, type: type):
 
 
 def type_from_str(string: str):
+    
     if not isinstance(string, str):
         # Can't work with it, so return as is.
         return string
+    # Because xarray doesn't accept bool or np.bool_ values for variables/
+    # attributes, leave any of these as strings.
     if string.lower() == 'true':
-        return True
+        return string.lower()  # return True
     elif string.lower() == 'false':
-        return False
+        return string.lower()  # return False
     else:
         try:
             float(string)

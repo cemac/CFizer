@@ -27,7 +27,7 @@ new_coordinate_variables:
       axis: X
       units: m
       long_name: x-coordinate in Cartesian system (cell-edges)
-  yu:
+  yv:
     spacing: dyy
     position: edge
     attributes:
