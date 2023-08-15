@@ -25,7 +25,7 @@ MONC_ID_ATTR = 'MONC timestep'  # It is essential that this be preserved across 
 
 OPTIONS_DATABASE = {
     'variable': 'options_database',
-    'dimensions': {'number_options', 'kvp'}
+    'dimensions': {'number_options', 'kvp', 'string'}
 }
 
 INPUT_FILE = {

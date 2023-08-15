@@ -74,7 +74,11 @@ class DirectoryParser:
         '''
         for file in glob('*.nc', root_dir=self.directory, recursive=False):
             filepath = os.path.join(self.directory, file)
-            with xr.open_dataset(filepath, decode_times=False) as ds:
+            with xr.open_dataset(filepath, 
+                                 decode_times=False, 
+                                 concat_characters=False) as ds:
+                # Using concat_characters=False preserves the string dimension 
+                # of the options_database variable.
                 if is_monc(ds):
                     self.monc_files.append(filepath)
                     # Find number of (non-options-database) dimensions, and add
@@ -113,7 +117,7 @@ class DirectoryParser:
         '''Attempt to find specified input data in possible input file(s)'''
         input_data = {}
         for f in self.input_files:
-            with xr.open_dataset(os.path.join(self.directory, f), decode_times=False) as ds:
+            with xr.open_dataset(os.path.join(self.directory, f), decode_times=False, concat_characters=False) as ds:
                 try:
                     input_data[f] = ds[INPUT_FILE['reftime']].attrs
                 except KeyError:
@@ -157,7 +161,7 @@ class DirectoryParser:
     
     def datasets(self):
         # Generator
-        return (xr.open_dataset(path, decode_times=False) for path in self.monc_files)
+        return (xr.open_dataset(path, decode_times=False, concat_characters=False) for path in self.monc_files)
     
     def cfize(self):
         '''
@@ -189,6 +193,19 @@ class DirectoryParser:
                 self.processed[group] = DsGroup(groups=groups_to_merge)
                 # Perform the merge
                 self.processed[group].process()
+                # Update self.variables to point now to the merged group
+                # if 'thref' in self.processed[group].processed.variables:
+                #     print('Before:', id(self.variables['thref']), id(self.processed[group]))
+                self.variables.update({
+                    v: self.processed[group]
+                    for v in self.processed[group].processed.variables
+                    })
+                self.variables.update({
+                    v: self.processed[group]
+                    for v in self.processed[group].processed.dims
+                    })
+                # if 'thref' in self.processed[group].processed.variables:
+                #     print('After:', id(self.variables['thref']), id(self.processed[group]))
             else:
                 # If only one group per group name, point self.processed to that group for ongoing processing.
                 self.processed[group] = groups_to_merge[0]
@@ -207,7 +224,7 @@ class DirectoryParser:
 
                 # Add CF-required globals, using data from config file.
                 # TODO: pass in filename stem & name from relevant group, to use as title
-                title = group.stem + group.name + '.nc' if group.name not in group.stem else group.stem.strip('_ ,+') + '.nc' # TODO: does this work for files being split? Does it matter if not, given splitting happens after here?
+                title = group.stem + group.name if group.name not in group.stem else group.stem.strip('_ ,+')  # TODO: does this work for files being split? Does it matter if not, given splitting happens after here?
                 ds.add_cf_attrs(title=title)
 
                 # add missing coordinate variables
@@ -219,7 +236,8 @@ class DirectoryParser:
                 # absolutes.
                 ds.cf_var(time_units=self.time_units, parser=self)
                 if group.time_var != ds.time_var:
-                    group.time_var = ds.time_var
+                    # group.time_var = ds.time_var
+                    self.processed[name].time_var = ds.time_var  # This assigns to the original group, rather than the ephemeral reference, group.
             
                 if group.action == 'split':
                     # Remove any attribute contained in ds.do_not_duplicate.
@@ -228,9 +246,21 @@ class DirectoryParser:
                     n_ds = group.split_times(ds)
 
                     # Finish processing the new datasets created by split.
-                    for new_ds in group.processed[-n_ds:]:
+                    # TODO: this may be better off in the split_times function, or in between.
+                    for i, new_ds in enumerate(group.processed[-n_ds:]):
                         # update or drop `Previous diagnostic write at` & `MONC time`.
-                        
+                        if i == 0:
+                            # First time point
+                            prev_write = 0.
+
+                        else:
+                            prev_write = group.processed[i-1].attrs['']
+
+                        if i < len(group.processed) - 1:
+                            # Remove unknown attribute values for all but last 
+                            # dataset.
+                            for attr in ds.do_not_duplicate:
+                                new_ds.attrs[attr] = nan
 
                         # Save each ds as NetCDF file, using required lossless compression if specified.
 
@@ -242,7 +272,10 @@ class DirectoryParser:
                     # Save resulting single dataset as NetCDF, using required lossless compression if specified.
                     # TODO: encoding attribute to include required compression settings, some of which require engine to be specified too.
                     # TODO: compute allows build & write operations to be delayed using dask.
-                    filepath = os.path.join(self.target_dir, ds.ds.title)
+                    filepath = os.path.join(
+                        self.target_dir, 
+                        ds.ds.title + '.nc'
+                    )
                     # TODO: encoding needs to be set, with each variable's encoding specified. Otherwise, _FillValue is applied to all, including coordinates, the latter contravening CF Conventions.
                     encodings = {
                         k:{
@@ -315,7 +348,13 @@ class MoncDataset:
     Notes:
         This has been set up as a standalone class, rather than inheriting from xr.Dataset, to avoid some complexities of inheriting from xarray data classes.
     '''
-    do_not_duplicate = ('MONC_timestep', )
+    do_not_duplicate = {'MONC_timestep'}
+    split_attrs = {
+        'title',
+        'created',
+        'MONC time',
+        'Previous diagnostic write at'
+    }
     
     def __init__(self, filepath: str = None, dataset: xr.Dataset = None):
         if dataset:
@@ -326,7 +365,7 @@ class MoncDataset:
             if not isinstance(filepath, str):
                 raise TypeError('filepath must be a string')
             try:
-                self.ds = xr.open_dataset(filepath, decode_times=False)
+                self.ds = xr.open_dataset(filepath, decode_times=False, concat_characters=False)
             except Exception as e:
                 raise e
             else:
@@ -347,14 +386,29 @@ class MoncDataset:
     def set_options(self, fields: list|set|tuple = None):
         # Get required fields from argument; import all if none supplied.
         if fields is None:
-            self.options = {
-                k.decode('utf-8'): type_from_str(v.decode('utf-8'))
-                for [k, v] in self.ds.options_database.data}
+            if self.ds.options_database.dtype == 'S1':
+                self.options = {
+                    ''.join([c.decode('utf-8') for c in k]): 
+                    type_from_str(''.join([c.decode('utf-8') for c in v]))
+                    for k, v in self.ds.options_database.data
+                }  # If dataset opened with concat_characters=False
+            else:
+                self.options = {
+                    k.decode('utf-8'): type_from_str(v.decode('utf-8'))
+                    for [k, v] in self.ds.options_database.data}
         else:
-            self.options = {
-                k.decode('utf-8'): type_from_str(v.decode('utf-8'))
-                for [k, v] in self.ds.options_database.data
-                if k.decode('utf-8') in fields}
+            if self.ds.options_database.dtype == 'S1':
+                self.options = {
+                    ''.join([c.decode('utf-8') for c in k]): 
+                    type_from_str(''.join([c.decode('utf-8') for c in v]))
+                    for k, v in self.ds.options_database.data
+                    if ''.join([c.decode('utf-8') for c in k]) in fields
+                }  # If dataset opened with concat_characters=False
+            else:
+                self.options = {
+                    k.decode('utf-8'): type_from_str(v.decode('utf-8'))
+                    for [k, v] in self.ds.options_database.data
+                    if k.decode('utf-8') in fields}
         
         # Drop any options that are reset by DEPHY, if used.
         if (all([opt in self.options for opt in DEPHY_OPTIONS]) and
