@@ -1,36 +1,97 @@
 time_series_300_1800:
+  dims:             
+  - time_series_300_1800
   updated_name:     time
-  new_units:        s
+  units:            s
   standard_name:    time
+  axis:             T
 VWP_mean:
+  dims:             
+  - time_series_300_1800
   long_name:        water vapor path
 prefn:
-  existing_units:   hPa
-  new_units:        Pa
+  dims:             
+  - time_series_300_1800
+  - zn
+  units:        Pa
   standard_name:    reference_pressure
   long_name:        Reference Pressure
 time_series_1800_1800:
+  dims:
+  - time_series_1800_1800
   updated_name:     time
-  new_units:        s
+  units:        s
   standard_name:    time
 surface_precip:
-  new_units:        'kg/m^2/s'
+  dims:
+  - time_series_1800_1800
+  - x
+  - y
+  units:        'kg/m^2/s'
   standard_name:    precipitation_flux_ at_sea_level
   long_name:        Surface Precipitation
+p:
+  dims:
+  - time_series_1800_1800
+  - x
+  - y
+  - zn
+  units:        Pa
+  standard_name:    air_pressure
+  perturbation_to_absolute: True
+  reference_variable: prefn
 w:
-  new_units:        'm/s'
+  dims:
+  - time_series_1800_1800
+  - x
+  - y
+  - z
+  units:        'm/s'
   long_name:        Wind Speed in z Direction
+  standard_name:    upward_air_velocity
 u:
-  new_units:        'm/s'
+  dims:
+  - time_series_1800_1800
+  - x
+  - y
+  - zn
+  units:        'm/s'
   long_name:        Zonal Wind
   standard_name:    x_wind
   dimension_changes:
     x: xu
+v: 
+  dims:
+  - time_series_1800_1800
+  - x
+  - y
+  - zn
+  units:        'm/s'
+  long_name:        Meridional Wind
+  standard_name:    y_wind
+  dimension_changes:
+    y: yv
 x:
-  new_units:        m
+  dims:
+  - x
+  units:        m
   long_name:        x-coordinate in Cartesian system (cell-centers)
   axis:             X
 xu:
-  new_units:        m
+  dims:
+  - xu
+  units:        m
   long_name:        x-coordinate in Cartesian system (cell-edges)
   axis:             X
+y:
+  dims:
+  - y
+  units:        m
+  long_name:        y-coordinate in Cartesian system (cell-centers)
+  axis:             Y
+yv:
+  dims:
+  - yv
+  units:        m
+  long_name:        y-coordinate in Cartesian system (cell-edges)
+  axis:             Y

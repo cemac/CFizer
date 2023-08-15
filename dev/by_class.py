@@ -8,6 +8,7 @@ from variable_functions import *
 from difflib import SequenceMatcher
 from utils import type_from_str, generate_coords, stem_str
 from numpy import nan
+from datetime import datetime
 
 
 class DirectoryParser:
@@ -25,8 +26,8 @@ class DirectoryParser:
     }
 
     def __init__(self,
-                 directory: str = None,
-                 target: str = None) -> None:
+                 directory: str = '',
+                 target: str = '') -> None:
         '''
         directory: path of directory containing NC files to be made CF compliant.
         target (optional): path to which processed files should be written.
@@ -41,20 +42,22 @@ class DirectoryParser:
         self.directory = directory or os.getcwd()
         self.monc_files = []
         self.input_files = []
+        self.variables = {}
+        self.by_dim = None  # Purges any DsGroup instances from previous run/debug
+        self.by_dim = {n_dim: DsGroup(
+            name=group, action=self.DIM_ACTIONS[group]
+        ) for n_dim, group in self.DIM_GROUPS.items()}
         self.sort_nc()
         # dim_groups = {
         #     name: DsGroup(name=name, action=action) 
         #     for name, action in self.DIM_ACTIONS.items()
         # }
-        self.by_dim = {n_dim: DsGroup(
-            name=group, action=self.DIM_ACTIONS[group]
-        ) for n_dim, group in self.DIM_GROUPS}
         # {
         #     n_dims: DimGroup(group=dim_groups[group])
         #     for n_dims, group in self.DIM_GROUPS.items()
         # }
-        self.time_units = None
-        self.target_dir = target or f'{os.path.dirname(self.directory)}+processed'
+        self.time_units = self.time_units_from_input() if self.input_files else None
+        self.target_dir = target or os.path.join(os.path.dirname(self.directory), f'{os.path.basename(self.directory)}+processed')
         if not os.path.exists(self.target_dir):
             try:
                 os.makedirs(self.target_dir)
@@ -78,6 +81,17 @@ class DirectoryParser:
                     # filepath to the appropriate dataset group.
                     n_dims = get_n_dims(ds) - 1
                     self.by_dim[n_dims].add(filepath=filepath)
+                    if len(self.by_dim[n_dims].filepaths) == 1:
+                        # If first dataset in group, add variables to 
+                        # dictionary linking each variable to its group.
+                        self.variables.update({
+                            v: self.by_dim[n_dims]
+                            for v in ds.variables if v not in self.variables
+                            })
+                        self.variables.update({
+                            v: self.by_dim[n_dims] 
+                            for v in ds.dims if v not in self.variables
+                            })
                 else:
                     self.input_files.append(filepath)
 
@@ -94,18 +108,70 @@ class DirectoryParser:
     #     for name, merge_list in to_merge.items():
     #         merged[name] = merge_ds_groups(merge_list)
 
+    def time_units_from_input(self) -> Units:
+        # TODO: this will use TimeUnits class
+        '''Attempt to find specified input data in possible input file(s)'''
+        input_data = {}
+        for f in self.input_files:
+            with xr.open_dataset(os.path.join(self.directory, f), decode_times=False) as ds:
+                try:
+                    input_data[f] = ds[INPUT_FILE['reftime']].attrs
+                except KeyError:
+                    # Variable not found in prospective input file; move on to
+                    # next input file, if any.
+                    continue
+        if len(input_data) != 1:
+            # TODO: work out how to decide between potentially conflicting data,
+            # and/or request user input.
+            if len(input_data) > 1:
+                print('Multiple time units found:')
+                while True:
+                    user_input = input('Please select number or enter units for time, including reference date in ISO format.')
+                    if user_input.isnumeric():
+                        try:
+                            input_data = list(input_data.values())[int(user_input)]
+                        except:
+                            continue
+                        else:
+                            break
+                    else:
+                        input_data = {'units': user_input}
+            else:
+                input_data = {
+                    'units': 
+                    input('Enter units for time, including reference date in ISO format:')
+                }
+        else:
+            input_data = list(input_data.values())[0]
+        while True:
+            try:
+                time_units = TimeUnits(
+                    units=input_data['units'], 
+                    calendar=input_data['calendar'] if 'calendar' in input_data else DEFAULT_CALENDAR
+                )
+            except ValueError as e:
+                input_data['units'] = input(e + 'Enter units for time, including reference date in ISO format:')
+                continue
+            else:
+                return time_units
+    
     def datasets(self):
         # Generator
         return (xr.open_dataset(path, decode_times=False) for path in self.monc_files)
     
     def cfize(self):
+        '''
+        TODO: This function should probably be separate from DirectoryParser,
+        as it should be possible for it to accept a group or individual 
+        dataset & still work.
+        '''
         for dim, group in self.by_dim.items():
             # First, merge time-points within dimension group, if required.
             # Any splitting into separate time points is done after other 
             # processing.
             if group.action == 'merge':
                 # extract global attributes for each file, and assign each as a `data_var` with dimension of time.
-                for ds in group.datasets():
+                for ds in group.datasets:
                     ds.attr_to_var(CONFIG['global_to_variable'])
 
                 # Merge all datasets in group to create single time-series dataset
@@ -117,7 +183,7 @@ class DirectoryParser:
         # Collect the merged groups, and any groups not needing to be merged,
         # into self.processed dict.
         for group in self.processed.keys():
-            groups_to_merge = [g for g in self.by_dim.values() if g == group]
+            groups_to_merge = [g for g in self.by_dim.values() if g.name == group]
             if len(groups_to_merge) > 1:
                 # Create new DsGroup containing groups to be merged
                 self.processed[group] = DsGroup(groups=groups_to_merge)
@@ -137,16 +203,21 @@ class DirectoryParser:
                 to_process = [MoncDataset(dataset=group.processed)]
             for ds in to_process:
                 # Convert required `options_database` items to global attrs.
-                ds = ds.options.to_attrs()  # TODO: check this actually updates the dataset!
+                ds.options_to_attrs()  # This ds is the same object as to_process[0]
 
                 # Add CF-required globals, using data from config file.
-                ds.add_cf_attrs()
+                # TODO: pass in filename stem & name from relevant group, to use as title
+                title = group.stem + group.name
+                ds.add_cf_attrs(title=title)
 
                 # add missing coordinate variables
                 ds.missing_coords()
 
                 # Apply CF-required updates to all variables, using vocabulary.
-                ds.cf_var()
+                # Need to pass in self, to give access to variable dictionary,
+                # if any variables might need converting from perturbations to
+                # absolutes.
+                ds.cf_var(time_units=self.time_units, parser=self)
             
                 if group.action == 'split':
                     # Remove any attribute contained in ds.do_not_duplicate.
@@ -178,7 +249,7 @@ class DsGroup:
     def __init__(self, 
                  name: str = '', 
                  action: str = None, 
-                 filepaths: list|set|tuple = [],
+                 filepaths: list|set|tuple = None,
                  groups: list|set|tuple = None) -> None:
         
         # TODO: validate parameters
@@ -188,10 +259,10 @@ class DsGroup:
             if not all([isinstance(group.processed, xr.Dataset) for group in groups]):
                 raise TypeError('To merge DsGroup objects, the processed attribute of each must contain a single xarray.Dataset object.')
             # merge existing groups
-            self.name = stem_str([group.name for group in groups])
+            self.name = stem_str(*[group.name for group in groups])
             self.action = 'merge_groups'
             self.process = self.merge_groups
-            self.stem = stem_str([group.stem for group in groups])
+            self.stem = stem_str(*[group.stem for group in groups])
             self.filepaths = []
             for group in groups:
                 self.filepaths += group.filepaths
@@ -209,25 +280,31 @@ class DsGroup:
             #     self.process = self.merge_groups
             else:
                 self.process = self.keep_time_series
-            self.filepaths = filepaths
+            self.filepaths = filepaths if filepaths else []  # Cannot set default valueas an empty list  in arguments, or it assigns SAME empty list to every instance.
             self.processed = []
-            self.stem = stem_str(self.filepaths)
+            self.stem = stem_str(*self.filepaths) if self.filepaths else None
             # Although it would be best to verify that all member datasets have the same time variable, for now, just use the first one.
-            self.time_var = MoncDataset(filepath=self.filepaths[0]).time_var
-            # TODO: check the dataset object created for self.time_var is not kept in memory after this __init__ function.
+            self.time_var = MoncDataset(filepath=self.filepaths[0]).time_var if self.filepaths else None
+            # Creating a generator for datasets is not appropriate, because it
+            # newly creates each MoncDataset every time it is used, meaning any
+            # changes made to a given MoncDataset object are lost afterwards.
+            self.datasets = [MoncDataset(path) for path in self.filepaths]
 
-    def datasets(self):
-        '''
-        This returns a generator that yields the datasets contained in each
-        filepath.
-        '''
-        # return (xr.open_dataset(path, decode_times=False) for path in self.filepaths)
-        return (MoncDataset(path) for path in self.filepaths)
+    # def datasets(self):
+    #     '''
+    #     This returns a generator that yields the datasets contained in each
+    #     filepath.
+    #     '''
+    #     # return (xr.open_dataset(path, decode_times=False) for path in self.filepaths)
+    #     return (MoncDataset(path) for path in self.filepaths)
 
     def add(self, filepath):
         # TODO: validate filepath
         self.filepaths.append(filepath)
         self.stem = stem_str(filepath, self.stem)
+        self.datasets.append(MoncDataset(filepath))
+        if not self.time_var:
+            self.time_var = self.datasets[-1].time_var
 
     # def stem_str(self, *args):
     #     if not args:
@@ -242,7 +319,7 @@ class DsGroup:
 
     def keep_time_series(self):
         # copy all datasets/files into self.processed
-        self.processed = [ds for ds in self.datasets()]
+        self.processed = [ds for ds in self.datasets]
 
     def merge_times(self):
         '''
@@ -253,7 +330,7 @@ class DsGroup:
         attributes can be preserved by MoncDataset.attr_to_var().
         '''
         self.processed = xr.combine_by_coords(
-            [monc_ds.ds for monc_ds in self.datasets()],
+            [monc_ds.ds for monc_ds in self.datasets],
             combine_attrs='drop_conflicts',
             join='exact',
             coords=[self.time_var],
@@ -267,6 +344,7 @@ class DsGroup:
 
     def merge_groups(self):
         self.processed = merge_dimensions(*self.to_merge)
+        self.processed.attrs['title'] = self.name
         
 
 # class DimGroup:
@@ -294,13 +372,17 @@ class DsGroup:
 
 
 class TimeUnits(Units):
-    def __init__(self, units=None, calendar=None, formatted=False, names=False, definition=False, _ut_unit=None):
+    '''
+    Uses proleptic_gregorian as default calendar, as per ISO 8601:2004,
+    even though CF standard calendar is a mixed Gregorian/Julian.
+    '''
+    def __init__(self, units=None, calendar='proleptic_gregorian', formatted=False, names=False, definition=False, _ut_unit=None):
         super().__init__(units, calendar, formatted, names, definition, _ut_unit)
         if not self.isvalid:
             raise ValueError('Units not valid according to cfunits module.')
     
     def time_unit(self) -> str:
-        return self.units.split(' since ')[0]
+        return self.formatted().split(' since ')[0]
     
     def since(self) -> str:
         return self.reftime.isoformat()
@@ -308,56 +390,26 @@ class TimeUnits(Units):
     def cf(self) -> str:
         return self.formatted()
     
-
-class OptionsDb:
-    _dephy_options = ('dephy_file', 'dephy_forcings_enabled')
-    _drop_for_dephy = ("longitude", "latitude", "z0")
-
-    def __init__(self, dataset: xr.Dataset, fields: list|set|tuple = None) -> None:
-        
-        if not isinstance(dataset, xr.Dataset):
-            raise TypeError('dataset argument must be of type xarray.Dataset')
-        
-        self._ds = dataset
-
-        # Get required fields from argument; import all if none supplied.
-        if fields is None:
-            [self.__setattr__(
-                k.decode('utf-8'), type_from_str(v.decode('utf-8'))
-                ) for [k, v] in self._ds.options_database.data]
-        else:
-            [self.__setattr__(
-                k.decode('utf-8'), type_from_str(v.decode('utf-8'))
-                ) for [k, v] in self._ds.options_database.data
-                if k.decode('utf-8') in fields]
-        
-        if (all([self.has_attr(opt) for opt in self._dephy_options]) &
-            all([self.__getattribute__(opt) for opt in self._dephy_options])):
-            for a in self._drop_for_dephy:
-                if self.has_attr(a):
-                    self.__delattr__(a)
-        
-    def has_attr(self, attr: str) -> bool:
+    def base_units_match(self, other: Units) -> bool:
+        return self.time_unit() == other.time_unit()
+    
+    def base_units_equivalent(self, other: Units) -> bool:
+        return Units(units=self.time_unit()).equivalent(Units(units=other.time_unit()))
+    
+    def ref_dates_match(self, other: Units) -> bool:
+        return self.since() == other.since()
+    
+    def has_calendar(self) -> bool:
         try:
-            self.__getattribute__(attr)
+            return self.calendar is not None
         except AttributeError:
             return False
+
+    def calendars_match(self, other: Units) -> bool:
+        if all([u.has_calendar for u in [self, other]]):
+            return self.calendar == other.calendar
         else:
-            return True
-        
-    def to_attrs(self) -> xr.Dataset:
-        for k in [k for k in dir(self) if (k[0] != '_')]:
-            self._ds.attrs[k] = self.__getattribute__(k)
-        return self._ds
-        
-    # def dx(self):
-    #     return self.dxx
-    
-    # def dy(self):
-    #     return self.dyy
-    
-    def get(self, attr: str):
-        return self.__getattribute__(attr)
+            return False
     
 
 class MoncDataset:
@@ -366,7 +418,7 @@ class MoncDataset:
         This has been set up as a standalone class, rather than inheriting from xr.Dataset, to avoid some complexities of inheriting from xarray data classes.
     '''
     do_not_duplicate = ('MONC_timestep', )
-
+    
     def __init__(self, filepath: str = None, dataset: xr.Dataset = None):
         if dataset:
             if not isinstance(dataset, xr.Dataset):
@@ -386,15 +438,45 @@ class MoncDataset:
             raise ValueError('Either a filepath (string) or xarray.Dataset must be passed in.')
         # data_vars = [MoncVariable(data_array=var) for var in ds.data_vars.values()]
         if self.ds:
-            self.options = OptionsDb(self.ds, fields=CONFIG['options_to_attrs'])
+            self.options = None
+            self.set_options(fields=CONFIG['options_to_attrs'])
             time_vars = [d for d in self.ds.dims if 'time' in d]
-            if len(time_vars) != 1
+            if len(time_vars) != 1:
                 # Throw error or prompt user to select which dimension to use
                 raise AttributeError(f'More than one time dimension found: {time_vars}')
             self.time_var = time_vars[0]
     
-    def add_cf_attrs(self):
-        pass
+    def set_options(self, fields: list|set|tuple = None):
+        # Get required fields from argument; import all if none supplied.
+        if fields is None:
+            self.options = {
+                k.decode('utf-8'): type_from_str(v.decode('utf-8'))
+                for [k, v] in self.ds.options_database.data}
+        else:
+            self.options = {
+                k.decode('utf-8'): type_from_str(v.decode('utf-8'))
+                for [k, v] in self.ds.options_database.data
+                if k.decode('utf-8') in fields}
+        
+        # Drop any options that are reset by DEPHY, if used.
+        if (all([opt in self.options for opt in DEPHY_OPTIONS]) and
+            all([self.options[opt] for opt in DEPHY_OPTIONS])):
+            for a in DROP_FOR_DEPHY:
+                if a in self.options:
+                    self.options.pop(a)
+        
+    def options_to_attrs(self):
+        for k, v in self.options.items():
+            self.ds.attrs[k] = v
+        
+    def add_cf_attrs(self, **kwargs):
+        # TODO: <version> and <url> and any other required data will be assigned during packaging.
+        defaults = {attr: None for attr in CF_ATTRIBUTES}
+        defaults['title'] = kwargs['title'] if 'title' in kwargs else self.title
+        defaults['history'] = f'{datetime.now().isoformat(timespec="minutes")}: output files processed using CFizer version <version>, <url>.'
+        for attr in CF_ATTRIBUTES:
+            self.ds.attrs[attr] = CONFIG[attr] if attr in CONFIG else defaults[attr]
+
 
     def attr_to_var(self, attr: str|list|set|tuple = None):
         
@@ -415,7 +497,7 @@ class MoncDataset:
                 if name in self.do_not_duplicate:
                     # TODO: this should assign `nan` to each data point except last, and then set coords as per other case below.
                     data = type_from_str(self.ds.attrs[g])
-                    coords = (last_time_point,)
+                    coords = [last_time_point]
                 else:
                     data = [type_from_str(self.ds.attrs[g])]*len(self.ds[self.time_var].data)
                     coords = self.ds[self.time_var]
@@ -449,11 +531,11 @@ class MoncDataset:
     def missing_coords(self):
         # Look for any dimensions that currently don't also exist as coordinate variables
         missing = [dim for dim in self.ds.dims if (
-            dim not in self.ds.coords &
+            dim not in self.ds.coords and
             dim not in OPTIONS_DATABASE['dimensions'])]
         
         # Look for any coordinates listed in config file that weren't already found in missing coordinates
-        [missing.append(dim) for dim in CONFIG['new_coordinate_variables'].keys() if dim not in missing]
+        # [missing.append(dim) for dim in CONFIG['new_coordinate_variables'].keys() if dim not in missing]  # Remove this: it causes coordinates to be added when they are not present in any variables' dimensions
         
         for dim in missing:
             attributes = {}
@@ -464,19 +546,19 @@ class MoncDataset:
                 midpoint = 'cent' in config['position'] or 'mid' in config['position']
                 for k, v in config['attributes'].items():
                     if k.lower() == 'units':
-                        attributes['units'] = cfunits.Units(v).formatted()
+                        attributes['units'] = Units(v).formatted()
                     else:
                         attributes[k.lower().replace(' ', '_')] = v if k != 'standard_name' else v.replace(' ', '_')
             else:
                 # If not in config file, assume it's x, y, xu or yu, with associated default attributes etc.
                 if dim[0] == 'x':
-                    spacing = self.options.get('dxx')
+                    spacing = self.options['dxx']
                     attributes = {
                         'axis': 'X',
                         'units': 'm'
                     }
                 elif dim[0] == 'y':
-                    spacing = self.options.get('dyy')
+                    spacing = self.options['dyy']
                     attributes = {
                         'axis': 'Y',
                         'units': 'm'
@@ -485,8 +567,10 @@ class MoncDataset:
                     # TODO: prompt user for grid spacing
                     raise AttributeError(f'Unknown grid spacing for {dim}.')
                 attributes['units'] = 'm'
+                # 'xu' and 'yv' are at endpoints, by default. 'x' and 'y' at 
+                # cell centres.
                 midpoint = dim[-1] not in ('u', 'v')
-                attributes['long_name'] = f'{dim[0]}-coordinate in Cartesian system (cell-{'centers' if midpoint else 'edges'})'
+                attributes['long_name'] = f'{dim[0]}-coordinate in Cartesian system (cell-{"centers" if midpoint else "edges"})'
                 
             # Generate data points for coordinate variable
             points = generate_coords(number=self.ds.dims[dim],
@@ -497,12 +581,14 @@ class MoncDataset:
             new_var = xr.Variable(dims=dim, attrs=attributes, data=points)
 
             # Add new coordinate variable to dataset
-            self.ds = ds.assign(variables={dim: new_var})
+            self.ds = self.ds.assign(variables={dim: new_var})
         
-    def cf_var(self, variable: str = None) -> None:
+        
+
+    def cf_var(self, variable: str = None, time_units: TimeUnits = None, parser: DirectoryParser = None) -> None:
         # If no variable specified, attempt to process all variables present.
         if not variable:
-            [self.cf_var(var) for var in self.ds.variables.keys() if var != OPTIONS_DATABASE['variable']]
+            [self.cf_var(variable=var, time_units=time_units, parser=parser) for var in self.ds.variables.keys() if var != OPTIONS_DATABASE['variable']]
 
         # Check variable exists in self.ds.
         if not variable in self.ds.variables.keys():
@@ -512,20 +598,165 @@ class MoncDataset:
         try:
             updates = VOCABULARY[variable]
         except KeyError:
+            # Check whether variable is already CF compliant. Skip rest of function if so.
+            if cf_compliant(self.ds[variable]):
+                return
+            
             # TODO: attempt to find in `standard_names` table
+            if 'standard_name' in self.ds[variable].attrs:
+                pass
+
             raise KeyError(f'{variable} not found in vocabulary.')
 
-        # Apply changes to variable where necessary
-        # Update dims/coordinates (xr.DataArray.assign_coords)?
-        # Update/add attributes
-        # Update name
-        # If time, derive corrected units
-        # If coord variable, add axis
-        # Check units cf-compliant
-        # Check standard_name cf-compliant, if present
-        # perturbation to absolute
+        '''Apply changes to variable where necessary'''
+        # TODO: split these into separate functions
 
-        # Check units are valid and apply standard formatting (e.g. kg/kg becomes 1)
+        # Update dims/coordinates
+        if 'dimension_changes' in updates:
+            # Don't need to check new_dim exists, if missing_coords() is run
+            # afterwards. But because current workflow has missing_coords before
+            # updating variables, do the check anyway.
+            if not set(updates['dimension_changes'].keys()).issubset(set(self.ds[variable].dims)):
+                raise KeyError(
+                        f'{set(updates["dimension_changes"].keys())} are not all dimensions of {variable}.'
+                    )
+            # Apply change(s)
+            self.ds[variable] = self.ds[variable].swap_dims(updates['dimension_changes'])
+            # Check new_dim exists
+            if not set(self.ds[variable].dims).issubset(self.ds.coords):
+                self.missing_coords()
+                
+        # Update/add name attributes
+        if 'standard_name' in updates:
+            # TODO: check standard_name is in list of standard names.
+
+            self.ds[variable].attrs['standard_name'] = updates['standard_name']
+
+        if 'long_name' in updates:
+            self.ds[variable].attrs['long_name'] = updates['long_name']
+
+        # For CF compliance, at least one name attribute is required
+        if 'standard_name' not in self.ds[variable].attrs and 'long_name' not in self.ds[variable].attrs:
+            raise KeyError('CF requires at least one of standard_name and long_name to be assigned to each variable.')
+        
+        # Check units cf-compliant & assign
+        if 'units' in updates:
+            if 'standard_name' in self.ds[variable].attrs:
+                # TODO: check units supplied are consistent with those in standard_name table
+                pass
+
+            # If time, derive corrected units
+            if all([
+                ('time' in variable or (
+                'axis' in self.ds[variable].attrs and 
+                self.ds[variable].attrs['axis'] == 'T')
+                ),
+                TimeUnits(units=updates['units']).base_units_equivalent(TimeUnits(units='s')),
+                variable in self.ds.coords]):
+                    
+                # Check provided unit against that obtained from input file or user.
+                new_unit = TimeUnits(units=updates['units'])
+                if not new_unit.equals(time_units):
+                    # Can we derive workable combination?
+                    if new_unit.isreftime:
+                        if new_unit.iscalendartime:
+                            # Incompatible; either ask for user confirmation
+                            # or use units from vocabulary.
+                            pass
+                        else:
+                            new_unit = TimeUnits(units=new_unit.units, calendar=time_units.calendar)
+                    else:
+                        if time_units.base_units_equivalent(other=new_unit):
+                            new_unit = time_units
+                        else:
+                            # TODO: query user, with time_units.units and time_units.calendar as prompts
+                            new_unit = TimeUnits(
+                                units=f'{new_unit.units} since {time_units.since}',
+                                calendar=time_units.calendar
+                            )
+                if new_unit.has_calendar():
+                    self.ds[variable].attrs['calendar'] = new_unit.calendar
+                
+                # Assign axis attribute
+                self.ds[variable].attrs['axis'] = updates['axis'] if 'axis' in updates else 'T'
+            else:
+                new_unit = Units(units=updates['units'])
+                if not new_unit.isvalid:
+                    # TODO: prompt user for valid value
+                    raise ValueError(f'Invalid unit specified in vocabulary: {variable}: {updates["units"]}')
+                
+            # If unit is different from current, and it's equivalent (e.g. km -> m), apply conversion as well as new unit.
+            if 'units' in self.ds[variable].attrs:
+                current_unit = Units(self.ds[variable].attrs['units'])
+                if new_unit.equivalent(current_unit) and not new_unit.equals(current_unit):
+                    Units.conform(
+                        x=self.ds[variable].data, 
+                        from_units=current_unit, 
+                        to_units=new_unit, 
+                        inplace=True
+                    )
+
+            # Apply new units
+            self.ds[variable].attrs['units'] = new_unit.formatted()
+
+        elif 'units' not in self.ds[variable].attrs:
+            # Look for unit in standard_names table
+
+            raise AttributeError(f'units attribute missing for {variable}.')
+        
+        else:
+            # Check existing unit is valid
+            if 'units' not in self.ds[variable].attrs:
+                raise AttributeError(f'units attribute must be assigned for each variable. None found for {variable}.')
+            current_unit = Units(self.ds[variable].units)
+            if current_unit.isvalid:
+                self.ds[variable].attrs['units'] = current_unit.formatted()
+            else:
+                raise ValueError(f'Current unit of {variable}, {current_unit}, is not valid.')
+
+        # Assign axis attribute if coordinate variable
+        if variable in self.ds.coords:
+            if 'axis' in updates:
+                self.ds[variable].attrs['axis'] = updates['axis']
+            elif 'axis' not in self.ds[variable].attrs:
+                # Infer or query user
+                if variable[0].lower() in {'x', 'y', 'z'}:
+                    if input(f'Apply axis = {variable[0].upper()} to {variable}? (y/n)')[0].lower() == 'y':
+                        self.ds[variable].attrs['axis'] = variable[0].upper()
+                if any(['time' in x for x in {
+                    variable, 
+                    self.ds[variable].attrs['standard_name'],
+                    self.ds[variable].attrs['long_name']
+                    }]):
+                    if input(f'Apply axis = T to {variable}? (y/n)')[0].lower() == 'y':
+                        self.ds[variable].attrs['axis'] = 'T'
+            # TODO: Ideally, this would check whether `positive` attribute is also needed. If provided, it would ideally check it is consistent with e.g. standard_name (standard_name = altitude, positive = up)
+            if 'positive' in updates:
+                self.ds[variable].attrs['positive'] = updates['positive']
+
+        
+        # perturbation to absolute
+        if 'perturbation_to_absolute' in updates and updates['perturbation_to_absolute']:
+            # This will require the reference variable to be brought in from a different dataset, in most if not all cases.
+
+            if 'reference_variable' not in updates:
+                raise KeyError(f'{variable}: If perturbation_to_absolute is True, reference_variable must contain the name of the variable containing reference value(s).')
+            if updates['reference_variable'] not in self.ds.variables:
+                # Look for reference variable in other dimension groups
+                if parser is not None:
+                    if updates['reference_variable'] in parser.variables:
+                        # TODO: Pull reference variable from relevant processed dataset.
+                        ref_group = parser.variables[
+                            updates['reference_variable']
+                        ]
+                raise KeyError(f'{variable}: Reference variable {updates["reference_variable"]} does not exist in dataset. If it is in another dataset, parser must be specified, to give access to the DirectoryParser.variables dictionary.')
+            
+
+        # Update name; this should be done last, so the existing name can still
+        # be used as a key.
+        if 'updated_name' in updates:
+            self.ds = self.ds.rename({variable: updates['updated_name']})
+
         
         # return new version of variable's data array.
         pass
@@ -543,7 +774,7 @@ class MoncDataset:
 
 
 def test():
-    # data_dir = os.path.join(os.path.dirname(app_dir), 'test_data')
+    data_dir = os.path.join(os.path.dirname(app_dir), 'test_data')
     
     # print("Testing MoncDataset instantiation: passing in filepath")
     # filename = 'd20200128_diagnostic_1d_3600.nc'
@@ -554,6 +785,9 @@ def test():
     # ds = xr.open_dataset(os.path.join(data_dir, filename), decode_times=False)
     # print(f"Is {filename} MONC output? {MoncDataset(dataset=ds).is_monc()}")
 
+    print('Testing DirectoryParser initialisation.')
+    parser = DirectoryParser(directory=data_dir)
+    parser.cfize()
     
 
 

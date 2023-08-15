@@ -2,6 +2,8 @@ import re
 from time import perf_counter
 from datetime import timedelta, datetime
 from cfunits import Units
+import os
+from difflib import SequenceMatcher
 
 
 def performance_time(func):
@@ -156,6 +158,8 @@ def generate_coords(number: int,
 def stem_str(*args):
         if not args:
             raise ValueError('At least one string must be provided.')
+        if None in args:
+            return stem_str(*[arg for arg in args if arg is not None])
         filenames = [os.path.splitext(os.path.basename(path))[0] for path in args]  # If each path contains only a filename (no extension) this will still work.
         stem = filenames[0]
         if len(args) > 1:
@@ -166,9 +170,11 @@ def stem_str(*args):
     
 
 if __name__ == '__main__':
-    value = 315960.
-    units = 'seconds since 2020-01-25'
-    decoded_units = decode_time_units(units)
-    print('decode_time_units:', decoded_units)
-    print('timedelta_from_units:', timedelta_from_units(value, decoded_units[0]))
-    print('datetime_from_relative_units:', datetime_from_relative_units(value, units))
+    # value = 315960.
+    # units = 'seconds since 2020-01-25'
+    # decoded_units = decode_time_units(units)
+    # print('decode_time_units:', decoded_units)
+    # print('timedelta_from_units:', timedelta_from_units(value, decoded_units[0]))
+    # print('datetime_from_relative_units:', datetime_from_relative_units(value, units))
+    print(f'stem_str("spam", None): {stem_str("spam", None)}')
+

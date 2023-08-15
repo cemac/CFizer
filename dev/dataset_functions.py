@@ -2,11 +2,11 @@ import xarray as xr
 from by_class import TimeUnits
 from setup import *
 from by_class import DsGroup
-from utils import stem_str
+from utils import stem_str, type_from_str
 
 
 def is_monc(dataset: xr.Dataset) -> bool:
-    return MONC_ID_ATTR in dataset.attrs
+    return MONC_ID_ATTR in set(dataset.attrs).union(set(dataset.variables))
 
 
 def get_n_dims(dataset: xr.Dataset) -> int:
@@ -99,12 +99,39 @@ def merge_dimensions(*args) -> xr.Dataset:
         return args[0].copy(deep=True)
     
     if len(args) == 2:
-        new_ds = args[0].copy(deep=True)
-        new_ds.merge(
-            other=args[1], 
-            join='exact', 
-            combine_attrs='drop_conflicts'
-        )
+        if all(['created' in ds.variables for ds in args]):
+            # if all(args[0].created.data > args[1].created.data):
+            #     new_ds = args[0].copy(deep=True)
+            #     to_merge = args[1]
+            # elif all(args[1].created.data > args[0].created.data):
+            #     new_ds = args[1].copy(deep=True)
+            #     to_merge = args[0]
+            if max(args[0].created.data) > max(args[1].created.data):
+                new_ds = args[0].copy(deep=True)
+                to_merge = args[1]
+            else:
+                new_ds = args[1].copy(deep=True)
+                to_merge = args[0]
+            # last_created = max([max(ds.created.data) for ds in args])
+            new_ds.merge(
+                other=to_merge, 
+                join='exact', 
+                combine_attrs='drop_conflicts',
+                overwrite_vars='created'
+            )  # overwrite_vars keeps base ds' variable values if conflict.
+            # combine_attrs only seems to apply to attributes of variables, 
+            # etc, not global attributes.
+        else:
+            new_ds = args[0].copy(deep=True)
+            # to_merge = args[1]
+            try:
+                new_ds.merge(
+                    other=args[1], 
+                    join='exact', 
+                    combine_attrs='drop_conflicts'
+                )
+            except xr.MergeError as e:
+                raise e
         return new_ds
     
     # call recursively until only 2 args to process
