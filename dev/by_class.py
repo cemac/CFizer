@@ -10,6 +10,7 @@ from utils import type_from_str, generate_coords, stem_str
 import numpy as np
 from datetime import datetime
 from time import perf_counter
+# import h5netcdf
 
 
 class DirectoryParser:
@@ -277,12 +278,13 @@ class DirectoryParser:
 
                         # Update title
                         # print(f"Before:\n0: {group.processed[0].attrs['title']}\n1: {group.processed[1].attrs['title']}")
-                        title = group.stem + group.name if group.name not in group.stem else group.stem.strip('_ ,+')
-                        title += f'_{int(new_ds.attrs["MONC time"])}'
+                        # title = group.stem + group.name if group.name not in group.stem else group.stem.strip('_ ,+')
+                        # title += f'_{int(new_ds.attrs["MONC time"])}'
+                        title = new_ds.attrs['title']
                         print(perf_counter(), 'Creating file from dataset', title)
 
-                        if 'title' in ds.split_attrs:
-                            new_ds.attrs['title'] = title
+                        # if 'title' in ds.split_attrs:
+                        #     new_ds.attrs['title'] = title
 
                         # print(f"After:\n0: {group.processed[0].attrs['title']}\n1: {group.processed[1].attrs['title']}")
                         
@@ -308,12 +310,17 @@ class DirectoryParser:
                             } for k, v in new_ds.variables.items()
                         }  # if k == 'options_database' or k in ds.ds.coords
 
-                        new_ds.to_netcdf(path=filepath, encoding=encodings)
+                        # xarray docs report engine='h5netcdf' may sometimes be 
+                        # faster. However, it doesn't natively handle the 
+                        # various string length types used here.
+                        new_ds.to_netcdf(
+                            path=filepath, 
+                            encoding=encodings)  # , engine='h5netcdf'
 
                         # Run each file through cf-checker
 
                         print(perf_counter(), 'Closing new dataset.')
-                        new_ds.close()  # Free up some memory
+                        new_ds.close()  # Free up some memory; will this interfere if managing write using dask?
                     # print(perf_counter(), 'Closing source dataset.')
                     # ds.ds.close()  # Free up some more memory
                 
@@ -474,9 +481,11 @@ class MoncDataset:
                     self.options.pop(a)
         
     def options_to_attrs(self):
-        for k, v in self.options.items():
-            # print(f"{k} ({type(v)}) = {v}")
-            self.ds.attrs[k] = v
+        self.ds = self.ds.assign_attrs(**self.options)
+        # print(self.ds.attrs)
+        # for k, v in self.options.items():
+        #     # print(f"{k} ({type(v)}) = {v}")
+        #     self.ds.attrs[k] = v
             # print(self.ds.attrs[k].dtype)
         
     def add_cf_attrs(self, **kwargs):
@@ -919,10 +928,14 @@ class DsGroup:
         # original, any changes to global attributes etc in one dataset will
         # propagate to all. To create independent datasets, each resulting ds
         # must be deep-copied.
-        split = None
-        times = [t for t in dataset.ds[self.time_var].data]
-        split = [dataset.ds.sel({self.time_var: t}).copy(deep=True) 
-                 for t in times]
+        # split = None
+        # times = [t for t in dataset.ds[self.time_var].data]
+        # split = [dataset.ds.sel({self.time_var: t}).copy(deep=True) 
+        #          for t in times]
+        grouped = {t: ds for (t, ds) in dataset.ds.groupby(self.time_var)}
+        for k, v in grouped.items():
+            v.attrs['title'] = v.attrs['title'] + '_' + str(int(k))
+        split = list(grouped.values())
         if self.processed is not None:
             self.processed += split
         else:
