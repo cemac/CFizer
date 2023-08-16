@@ -62,16 +62,19 @@ def type_from_str(string: str):
     '''
     Uses numpy dtypes, to ensure xarray.Dataset.to_netcdf gives predictable 
     results.
+    Using double precision for floats is wasteful, but using single precision
+    results in numbers being off due to precision, and their displaying with a 
+    trailing 'f' in NC files.
     '''
     if not isinstance(string, str):
         # Can't work with it, so return as is.
-        return np.str(string)
+        return np.str_(string)
     # Because xarray doesn't accept bool or np.bool_ values for variables/
     # attributes, leave any of these as strings.
     if string.lower() == 'true':
-        return np.str(string.lower())  # return True
+        return np.str_(string.lower())  # return True
     elif string.lower() == 'false':
-        return np.str(string.lower())  # return False
+        return np.str_(string.lower())  # return False
     else:
         try:
             float(string)
@@ -79,7 +82,7 @@ def type_from_str(string: str):
             # decimal points or scientific notation.
         except ValueError:
             # not a number
-            return np.str(string)  # leave as a string
+            return np.str_(string)  # leave as a string
         else:
             if '.' not in string:
                 try:
@@ -87,11 +90,11 @@ def type_from_str(string: str):
                 except ValueError:
                     # not an integer;
                     # should never reach this option.
-                    return np.float32(string)
+                    return np.double(string)
                 else:
                     return np.int32(string)
             else:
-                return np.float32(string)  # floating point, whether integer or not
+                return np.double(string)  # floating point, whether integer or not
 
 
 def decode_time_units(units: str) -> tuple:

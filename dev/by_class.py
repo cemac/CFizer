@@ -475,7 +475,9 @@ class MoncDataset:
         
     def options_to_attrs(self):
         for k, v in self.options.items():
+            # print(f"{k} ({type(v)}) = {v}")
             self.ds.attrs[k] = v
+            # print(self.ds.attrs[k].dtype)
         
     def add_cf_attrs(self, **kwargs):
         # TODO: <version> and <url> and any other required data will be assigned during packaging.
@@ -898,6 +900,10 @@ class DsGroup:
         combine_attrs='drop_conflicts' can be used because any necessary global
         attributes can be preserved by MoncDataset.attr_to_var().
         '''
+        # Take latest 'created' time-point as the value for the combined ds.
+        created = max(
+            [monc_ds.ds.attrs['created'] for monc_ds in self.datasets]
+        )
         self.processed = xr.combine_by_coords(
             [monc_ds.ds for monc_ds in self.datasets],
             combine_attrs='drop_conflicts',
@@ -905,6 +911,8 @@ class DsGroup:
             coords=[self.time_var],
             data_vars='minimal'
         )
+        self.processed.attrs['created'] = np.str_(created)
+        # print('Created attr set to:', self.processed.attrs['created'])
 
     def split_times(self, dataset: MoncDataset) -> int:
         # Because xarray.Dataset.sel only creates datasets that point to the

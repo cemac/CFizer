@@ -4,7 +4,6 @@ references: None
 comment: None
 global_to_variable:
   - MONC timestep
-  - created
 new_coordinate_variables:
   x:
     spacing: dxx

@@ -3,6 +3,7 @@ from by_class import TimeUnits
 from setup import *
 from by_class import DsGroup
 from utils import stem_str, type_from_str
+import numpy as np
 
 
 def is_monc(dataset: xr.Dataset) -> bool:
@@ -99,44 +100,55 @@ def merge_dimensions(*args) -> xr.Dataset:
         return args[0].copy(deep=True)
     
     if len(args) == 2:
-        if all(['created' in ds.variables for ds in args]):
+        if all(['created' in ds.attrs for ds in args]):
+            created = max([ds.created for ds in args])
             # if all(args[0].created.data > args[1].created.data):
             #     new_ds = args[0].copy(deep=True)
             #     to_merge = args[1]
             # elif all(args[1].created.data > args[0].created.data):
             #     new_ds = args[1].copy(deep=True)
             #     to_merge = args[0]
-            if max(args[0].created.data) > max(args[1].created.data):
-                # new_ds = args[1].copy(deep=True)
-                # new_ds.update({'created': args[0]['created']})
-                # to_merge = args[0]
-                new_ds = args[1].copy(deep=True)
-                to_merge = args[0]
-            else:
-                # new_ds = args[0].copy(deep=True)
-                # new_ds.update({'created': args[1]['created']})
-                # to_merge = args[1]
-                new_ds = args[0].copy(deep=True)
-                to_merge = args[1]
+            # if max(args[0].created.data) > max(args[1].created.data):
+            #     # new_ds = args[1].copy(deep=True)
+            #     # new_ds.update({'created': args[0]['created']})
+            #     # to_merge = args[0]
+            #     new_ds = args[1].copy(deep=True)
+            #     to_merge = args[0]
+            # else:
+            #     # new_ds = args[0].copy(deep=True)
+            #     # new_ds.update({'created': args[1]['created']})
+            #     # to_merge = args[1]
+            #     new_ds = args[0].copy(deep=True)
+            #     to_merge = args[1]
     
             # last_created = max([max(ds.created.data) for ds in args])
-            new_ds = new_ds.merge(
-                other=to_merge, 
+            # new_ds = new_ds.merge(
+            #     other=to_merge, 
+            #     join='exact', 
+            #     combine_attrs='drop_conflicts'
+            # ) # overwrite_vars keeps base ds' variable values if conflict.
+            new_ds = args[0].merge(
+                other=args[1], 
                 join='exact', 
-                combine_attrs='drop_conflicts',
-                overwrite_vars='created'
-            )  # overwrite_vars keeps base ds' variable values if conflict.
+                combine_attrs='drop_conflicts'
+            ) 
             # combine_attrs only seems to apply to attributes of variables, 
             # etc, not global attributes.
             # new_ds = new_ds.merge(
             #     other=to_merge, 
             #     join='exact', 
             #     combine_attrs='drop_conflicts')
+            new_ds.attrs['created'] = np.str_(created)
         else:
-            new_ds = args[0].copy(deep=True)
+            # new_ds = args[0].copy(deep=True)
             # to_merge = args[1]
             try:
-                new_ds = new_ds.merge(
+                # new_ds = new_ds.merge(
+                #     other=args[1], 
+                #     join='exact', 
+                #     combine_attrs='drop_conflicts'
+                # )
+                new_ds = args[0].merge(
                     other=args[1], 
                     join='exact', 
                     combine_attrs='drop_conflicts'
