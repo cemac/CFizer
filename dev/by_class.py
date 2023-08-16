@@ -9,6 +9,7 @@ from difflib import SequenceMatcher
 from utils import type_from_str, generate_coords, stem_str
 from numpy import nan, dtype
 from datetime import datetime
+from time import perf_counter
 
 
 class DirectoryParser:
@@ -75,8 +76,7 @@ class DirectoryParser:
         for file in glob('*.nc', root_dir=self.directory, recursive=False):
             filepath = os.path.join(self.directory, file)
             with xr.open_dataset(filepath, 
-                                 decode_times=False, 
-                                 concat_characters=False) as ds:
+                                 decode_times=False) as ds:  # concat_characters=False
                 # Using concat_characters=False preserves the string dimension 
                 # of the options_database variable.
                 if is_monc(ds):
@@ -117,7 +117,7 @@ class DirectoryParser:
         '''Attempt to find specified input data in possible input file(s)'''
         input_data = {}
         for f in self.input_files:
-            with xr.open_dataset(os.path.join(self.directory, f), decode_times=False, concat_characters=False) as ds:
+            with xr.open_dataset(os.path.join(self.directory, f), decode_times=False) as ds:  # , concat_characters=False
                 try:
                     input_data[f] = ds[INPUT_FILE['reftime']].attrs
                 except KeyError:
@@ -161,7 +161,7 @@ class DirectoryParser:
     
     def datasets(self):
         # Generator
-        return (xr.open_dataset(path, decode_times=False, concat_characters=False) for path in self.monc_files)
+        return (xr.open_dataset(path, decode_times=False) for path in self.monc_files)  # , concat_characters=False
     
     def cfize(self):
         '''
@@ -170,6 +170,7 @@ class DirectoryParser:
         dataset & still work.
         '''
         for dim, group in self.by_dim.items():
+            print(perf_counter(), 'Merging datasets in group', group.name)
             # First, merge time-points within dimension group, if required.
             # Any splitting into separate time points is done after other 
             # processing.
@@ -192,6 +193,7 @@ class DirectoryParser:
                 # Create new DsGroup containing groups to be merged
                 self.processed[group] = DsGroup(groups=groups_to_merge)
                 # Perform the merge
+                print(f'{perf_counter()}: Merging groups {" & ".join([g.name for g in groups_to_merge])}')
                 self.processed[group].process()
                 # Update self.variables to point now to the merged group
                 # if 'thref' in self.processed[group].processed.variables:
@@ -212,7 +214,7 @@ class DirectoryParser:
 
         # Update global attributes and variables. Split time-points if required.
         for name, group in self.processed.items():
-            print('Working on group', name)
+            print(perf_counter(), 'Working on group', name)
 
             # combine filename stem & name from relevant group, to use as title
             title = group.stem + group.name if group.name not in group.stem else group.stem.strip('_ ,+')
@@ -225,19 +227,24 @@ class DirectoryParser:
                 to_process = [MoncDataset(dataset=group.processed)]
                 
             for ds in to_process:
+                print(f'{ds.ds.attrs["title"]}:')
                 # Convert required `options_database` items to global attrs.
+                print(perf_counter(), 'Adding attributes from options database.')
                 ds.options_to_attrs()  # This ds is the same object as to_process[0]
 
                 # Add CF-required globals, using data from config file.
+                print(perf_counter(), 'Adding attributes required by CF.')
                 ds.add_cf_attrs(title=title)
 
                 # add missing coordinate variables
+                print(perf_counter(), 'Adding any missing coordinate variables.')
                 ds.missing_coords()
 
                 # Apply CF-required updates to all variables, using vocabulary.
                 # Need to pass in self, to give access to variable dictionary,
                 # if any variables might need converting from perturbations to
                 # absolutes.
+                print(perf_counter(), 'Making variables CF-compliant.')
                 ds.cf_var(time_units=self.time_units, parser=self)
                 if group.time_var != ds.time_var:
                     # group.time_var = ds.time_var
@@ -247,20 +254,22 @@ class DirectoryParser:
                     # Remove any attribute contained in ds.do_not_duplicate.
 
                     # Separate datasets by timepoint
+                    print(perf_counter(), 'Splitting dataset by time-point.')
                     n_ds = group.split_times(ds)
                     # TODO: why is ds.ds.title changing after this?
 
 
                     # Finish processing the new datasets created by split.
                     # TODO: this may be better off in the split_times function, or in between.
-                    for i, new_ds in enumerate(group.processed[-n_ds:]):
+                    for i in range(len(group.processed) - n_ds, len(group.processed)):  #, new_ds in enumerate(group.processed[-n_ds:]):
+                        new_ds = group.processed[i]
                         # update or drop `Previous diagnostic write at` & `MONC time`.
                         if 'Previous diagnostic write at' in ds.split_attrs:
                             if i == 0:
                                 # First time point
                                 prev_write = 0.
                             else:
-                                prev_write = group.processed[i-1].attrs['Previous diagnostic write at']
+                                prev_write = group.processed[i-1].time.data.tolist()
                             new_ds.attrs['Previous diagnostic write at'] = prev_write
                         
                         if 'MONC time' in ds.split_attrs:
@@ -270,7 +279,7 @@ class DirectoryParser:
                         # print(f"Before:\n0: {group.processed[0].attrs['title']}\n1: {group.processed[1].attrs['title']}")
                         title = group.stem + group.name if group.name not in group.stem else group.stem.strip('_ ,+')
                         title += f'_{int(new_ds.attrs["MONC time"])}'
-                        print('Creating file from dataset', title)
+                        print(perf_counter(), 'Creating file from dataset', title)
 
                         if 'title' in ds.split_attrs:
                             new_ds.attrs['title'] = title
@@ -303,10 +312,13 @@ class DirectoryParser:
 
                         # Run each file through cf-checker
 
-                        pass
+                        print(perf_counter(), 'Closing new dataset.')
+                        new_ds.close()  # Free up some memory
+                    # print(perf_counter(), 'Closing source dataset.')
+                    # ds.ds.close()  # Free up some more memory
                 
                 else:
-                    print('Creating file from dataset', title)
+                    print(perf_counter(), 'Creating file from dataset', title)
                     # Save resulting single dataset as NetCDF, using required lossless compression if specified.
                     # TODO: encoding attribute to include required compression settings, some of which require engine to be specified too.
                     # TODO: compute allows build & write operations to be delayed using dask.
@@ -321,6 +333,8 @@ class DirectoryParser:
                             '_FillValue': None
                         } for k, v in ds.ds.variables.items()
                     }  # if k == 'options_database' or k in ds.ds.coords
+                    # for k, v in ds.ds.attrs.items():
+                    #     encodings.update(k={'dtype': ''})
 
                     ds.ds.to_netcdf(path=filepath, encoding=encodings)
 
@@ -331,7 +345,7 @@ class DirectoryParser:
                     # Update group.processed with current version of dataset
                     group.processed = ds.ds  # Expects xr.Dataset
         
-        print('Done processing groups. Probably doing some housekeeping now.')
+        print(perf_counter(), 'Done processing groups. Probably doing some housekeeping now.')
 
     def get_ref_var(self, variable: str) -> xr.DataArray:
         if variable not in self.variables:
@@ -404,7 +418,7 @@ class MoncDataset:
             if not isinstance(filepath, str):
                 raise TypeError('filepath must be a string')
             try:
-                self.ds = xr.open_dataset(filepath, decode_times=False, concat_characters=False)
+                self.ds = xr.open_dataset(filepath, decode_times=False)  # , concat_characters=False
             except Exception as e:
                 raise e
             else:
@@ -426,6 +440,9 @@ class MoncDataset:
         # Get required fields from argument; import all if none supplied.
         if fields is None:
             if self.ds.options_database.dtype == 'S1':
+                # This is used if concat_characters=False options is used in
+                # xarray.open_dataset. It seems to create some problems down
+                # the line, so is not advised.
                 self.options = {
                     ''.join([c.decode('utf-8') for c in k]): 
                     type_from_str(''.join([c.decode('utf-8') for c in v]))
@@ -887,6 +904,7 @@ class DsGroup:
             self.processed += split
         else:
             self.processed = split
+        dataset.ds.close()  # Original no longer needed
         return len(split)
 
     def merge_groups(self):
