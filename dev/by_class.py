@@ -212,19 +212,23 @@ class DirectoryParser:
 
         # Update global attributes and variables. Split time-points if required.
         for name, group in self.processed.items():
+            print('Working on group', name)
+
+            # combine filename stem & name from relevant group, to use as title
+            title = group.stem + group.name if group.name not in group.stem else group.stem.strip('_ ,+')
+
             if group.action == 'split':
                 # Process each dataset in group. Group won't have a processed attribute yet.
                 to_process = group.datasets
             else:
                 # Process group.processed only
                 to_process = [MoncDataset(dataset=group.processed)]
+                
             for ds in to_process:
                 # Convert required `options_database` items to global attrs.
                 ds.options_to_attrs()  # This ds is the same object as to_process[0]
 
                 # Add CF-required globals, using data from config file.
-                # TODO: pass in filename stem & name from relevant group, to use as title
-                title = group.stem + group.name if group.name not in group.stem else group.stem.strip('_ ,+')  # TODO: does this work for files being split? Does it matter if not, given splitting happens after here?
                 ds.add_cf_attrs(title=title)
 
                 # add missing coordinate variables
@@ -244,17 +248,35 @@ class DirectoryParser:
 
                     # Separate datasets by timepoint
                     n_ds = group.split_times(ds)
+                    # TODO: why is ds.ds.title changing after this?
+
 
                     # Finish processing the new datasets created by split.
                     # TODO: this may be better off in the split_times function, or in between.
                     for i, new_ds in enumerate(group.processed[-n_ds:]):
                         # update or drop `Previous diagnostic write at` & `MONC time`.
-                        if i == 0:
-                            # First time point
-                            prev_write = 0.
+                        if 'Previous diagnostic write at' in ds.split_attrs:
+                            if i == 0:
+                                # First time point
+                                prev_write = 0.
+                            else:
+                                prev_write = group.processed[i-1].attrs['Previous diagnostic write at']
+                            new_ds.attrs['Previous diagnostic write at'] = prev_write
+                        
+                        if 'MONC time' in ds.split_attrs:
+                            new_ds.attrs['MONC time'] = new_ds.time.data.tolist()
 
-                        else:
-                            prev_write = group.processed[i-1].attrs['']
+                        # Update title
+                        # print(f"Before:\n0: {group.processed[0].attrs['title']}\n1: {group.processed[1].attrs['title']}")
+                        title = group.stem + group.name if group.name not in group.stem else group.stem.strip('_ ,+')
+                        title += f'_{int(new_ds.attrs["MONC time"])}'
+                        print('Creating file from dataset', title)
+
+                        if 'title' in ds.split_attrs:
+                            new_ds.attrs['title'] = title
+
+                        # print(f"After:\n0: {group.processed[0].attrs['title']}\n1: {group.processed[1].attrs['title']}")
+                        
 
                         if i < len(group.processed) - 1:
                             # Remove unknown attribute values for all but last 
@@ -262,13 +284,29 @@ class DirectoryParser:
                             for attr in ds.do_not_duplicate:
                                 new_ds.attrs[attr] = nan
 
-                        # Save each ds as NetCDF file, using required lossless compression if specified.
+                        # Save each ds as NetCDF file, using required lossless 
+                        # compression if specified.
+                        filepath = os.path.join(
+                            self.target_dir, 
+                            title + '.nc'
+                        )
+
+                        # TODO: encoding needs to be set, with each variable's encoding specified. Otherwise, _FillValue is applied to all, including coordinates, the latter contravening CF Conventions.
+                        encodings = {
+                            k:{
+                                'dtype': v.dtype,
+                                '_FillValue': None
+                            } for k, v in new_ds.variables.items()
+                        }  # if k == 'options_database' or k in ds.ds.coords
+
+                        new_ds.to_netcdf(path=filepath, encoding=encodings)
 
                         # Run each file through cf-checker
 
                         pass
                 
                 else:
+                    print('Creating file from dataset', title)
                     # Save resulting single dataset as NetCDF, using required lossless compression if specified.
                     # TODO: encoding attribute to include required compression settings, some of which require engine to be specified too.
                     # TODO: compute allows build & write operations to be delayed using dask.
@@ -292,6 +330,8 @@ class DirectoryParser:
 
                     # Update group.processed with current version of dataset
                     group.processed = ds.ds  # Expects xr.Dataset
+        
+        print('Done processing groups. Probably doing some housekeeping now.')
 
     def get_ref_var(self, variable: str) -> xr.DataArray:
         if variable not in self.variables:
@@ -348,10 +388,9 @@ class MoncDataset:
     Notes:
         This has been set up as a standalone class, rather than inheriting from xr.Dataset, to avoid some complexities of inheriting from xarray data classes.
     '''
-    do_not_duplicate = {'MONC_timestep'}
+    do_not_duplicate = {'MONC timestep'}
     split_attrs = {
         'title',
-        'created',
         'MONC time',
         'Previous diagnostic write at'
     }
@@ -424,8 +463,9 @@ class MoncDataset:
     def add_cf_attrs(self, **kwargs):
         # TODO: <version> and <url> and any other required data will be assigned during packaging.
         defaults = {attr: None for attr in CF_ATTRIBUTES}
-        defaults['title'] = kwargs['title'] if 'title' in kwargs else self.title
+        defaults['title'] = kwargs['title'] if 'title' in kwargs and kwargs['title'] else self.title
         defaults['history'] = f'{datetime.now().isoformat(timespec="minutes")}: output files processed using CFizer version <version>, <url>.'
+        defaults['conventions'] = 'CF-1.10'
         for attr in CF_ATTRIBUTES:
             self.ds.attrs[attr] = CONFIG[attr] if attr in CONFIG else defaults[attr]
 
@@ -446,7 +486,7 @@ class MoncDataset:
         if all([isinstance(a, str) for a in attr]):
             for g in attr:
                 name = g.replace(' ', '_')  # TODO: Replace this with a full "safe_string" function
-                if name in self.do_not_duplicate:
+                if g in self.do_not_duplicate:  # name
                     # TODO: this should assign `nan` to each data point except last, and then set coords as per other case below.
                     data = type_from_str(self.ds.attrs[g])
                     coords = [last_time_point]
@@ -835,9 +875,14 @@ class DsGroup:
         )
 
     def split_times(self, dataset: MoncDataset) -> int:
+        # Because xarray.Dataset.sel only creates datasets that point to the
+        # original, any changes to global attributes etc in one dataset will
+        # propagate to all. To create independent datasets, each resulting ds
+        # must be deep-copied.
         split = None
         times = [t for t in dataset.ds[self.time_var].data]
-        split = [dataset.ds.sel({self.time_var: t}) for t in times]
+        split = [dataset.ds.sel({self.time_var: t}).copy(deep=True) 
+                 for t in times]
         if self.processed is not None:
             self.processed += split
         else:

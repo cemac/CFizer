@@ -19,7 +19,8 @@ CF_ATTRIBUTES = {'title',
                  'source', 
                  'history', 
                  'references', 
-                 'comment'}
+                 'comment',
+                 'conventions'}
 
 MONC_ID_ATTR = 'MONC timestep'  # It is essential that this be preserved across all modified datasets, either as attribute or variable.
 
