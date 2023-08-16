@@ -7,7 +7,7 @@ from dataset_functions import *
 from variable_functions import *
 from difflib import SequenceMatcher
 from utils import type_from_str, generate_coords, stem_str
-from numpy import nan, dtype
+import numpy as np
 from datetime import datetime
 from time import perf_counter
 
@@ -291,7 +291,7 @@ class DirectoryParser:
                             # Remove unknown attribute values for all but last 
                             # dataset.
                             for attr in ds.do_not_duplicate:
-                                new_ds.attrs[attr] = nan
+                                new_ds.attrs[attr] = np.nan
 
                         # Save each ds as NetCDF file, using required lossless 
                         # compression if specified.
@@ -504,7 +504,7 @@ class MoncDataset:
             for g in attr:
                 name = g.replace(' ', '_')  # TODO: Replace this with a full "safe_string" function
                 if g in self.do_not_duplicate:  # name
-                    # TODO: this should assign `nan` to each data point except last, and then set coords as per other case below.
+                    # TODO: this should assign `np.nan` to each data point except last, and then set coords as per other case below.
                     data = type_from_str(self.ds.attrs[g])
                     coords = [last_time_point]
                 else:
@@ -538,10 +538,22 @@ class MoncDataset:
     #         )
 
     def missing_coords(self):
-        # Look for any dimensions that currently don't also exist as coordinate variables
-        missing = [dim for dim in self.ds.dims if (
-            dim not in self.ds.coords and
-            dim not in OPTIONS_DATABASE['dimensions'])]
+        '''
+        Look for any dimensions that currently don't also exist as coordinate 
+        variables.
+        '''
+        dim_type = np.dtype('float32')
+        missing = []
+        for dim in self.ds.dims:
+            # Set type to match existing spatial coordinates (assume for now all are the same)
+            if dim in self.ds.coords:
+                if 'time' not in dim:
+                    dim_type = self.ds.coords[dim].dtype
+            elif dim not in OPTIONS_DATABASE['dimensions']:
+                missing.append(dim)
+        # missing = [dim for dim in self.ds.dims if (
+        #     dim not in self.ds.coords and
+        #     dim not in OPTIONS_DATABASE['dimensions'])]
         
         # Look for any coordinates listed in config file that weren't already found in missing coordinates
         # [missing.append(dim) for dim in CONFIG['new_coordinate_variables'].keys() if dim not in missing]  # Remove this: it causes coordinates to be added when they are not present in any variables' dimensions
@@ -582,9 +594,12 @@ class MoncDataset:
                 attributes['long_name'] = f'{dim[0]}-coordinate in Cartesian system (cell-{"centers" if midpoint else "edges"})'
                 
             # Generate data points for coordinate variable
+            # First convert spacing to required np.dtype
+            # spacing = np.array(spacing).astype(dim_type).tolist()
             points = generate_coords(number=self.ds.dims[dim],
                                      spacing=spacing,
-                                     midpoint=midpoint)
+                                     midpoint=midpoint,
+                                     data_type=dim_type)
             
             # create new xarray variable based on the new coordinate
             new_var = xr.Variable(dims=dim, attrs=attributes, data=points)

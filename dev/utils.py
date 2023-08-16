@@ -157,9 +157,13 @@ def datetime_from_relative_units(number: float|int, units: str) -> datetime:
 
 def generate_coords(number: int, 
                     spacing: float|int, 
-                    midpoint: bool = False) -> list:
-    first = spacing/2 if midpoint else 0
-    return [(x * spacing + first) for x in range(number)]
+                    midpoint: bool = False,
+                    data_type: np.dtype = np.float64) -> list:
+    # TODO: change to use np.dtype
+    # first = spacing/2 if midpoint else 0
+    # return [(x * spacing + first) for x in range(number)]
+    first = 0.5 if midpoint else 0
+    return np.arange(first, number, 1, dtype=data_type) * spacing
 
 
 def stem_str(*args):
