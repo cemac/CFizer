@@ -50,14 +50,6 @@ class DirectoryParser:
             name=group, action=self.DIM_ACTIONS[group]
         ) for n_dim, group in self.DIM_GROUPS.items()}
         self.sort_nc()
-        # dim_groups = {
-        #     name: DsGroup(name=name, action=action) 
-        #     for name, action in self.DIM_ACTIONS.items()
-        # }
-        # {
-        #     n_dims: DimGroup(group=dim_groups[group])
-        #     for n_dims, group in self.DIM_GROUPS.items()
-        # }
         self.time_units = self.time_units_from_input() if self.input_files else None
         self.target_dir = target or os.path.join(os.path.dirname(self.directory), f'{os.path.basename(self.directory)}+processed')
         if not os.path.exists(self.target_dir):
@@ -79,7 +71,8 @@ class DirectoryParser:
             with xr.open_dataset(filepath, 
                                  decode_times=False) as ds:  # concat_characters=False
                 # Using concat_characters=False preserves the string dimension 
-                # of the options_database variable.
+                # of the options_database variable. However, it makes dealing
+                # with the binary -> string conversion painful and messy.
                 if is_monc(ds):
                     self.monc_files.append(filepath)
                     # Find number of (non-options-database) dimensions, and add
@@ -99,19 +92,6 @@ class DirectoryParser:
                             })
                 else:
                     self.input_files.append(filepath)
-
-    # def merge_by_group(self):
-    #     to_merge = {}
-    #     for name, action in self.DIM_ACTIONS.items():
-    #         if action == 'merge':
-    #             merge_group = [group for group in self.by_dim.values() if group.name == name]
-    #             if len(merge_group) > 1:
-    #                 to_merge[name] = merge_group
-    #             else:
-    #                 to_merge.pop(name)
-    #     merged = {}
-    #     for name, merge_list in to_merge.items():
-    #         merged[name] = merge_ds_groups(merge_list)
 
     def time_units_from_input(self) -> Units:
         # TODO: this will use TimeUnits class
@@ -197,8 +177,6 @@ class DirectoryParser:
                 print(f'{perf_counter()}: Merging groups {" & ".join([g.name for g in groups_to_merge])}')
                 self.processed[group].process()
                 # Update self.variables to point now to the merged group
-                # if 'thref' in self.processed[group].processed.variables:
-                #     print('Before:', id(self.variables['thref']), id(self.processed[group]))
                 self.variables.update({
                     v: self.processed[group]
                     for v in self.processed[group].processed.variables
@@ -207,8 +185,6 @@ class DirectoryParser:
                     v: self.processed[group]
                     for v in self.processed[group].processed.dims
                     })
-                # if 'thref' in self.processed[group].processed.variables:
-                #     print('After:', id(self.variables['thref']), id(self.processed[group]))
             else:
                 # If only one group per group name, point self.processed to that group for ongoing processing.
                 self.processed[group] = groups_to_merge[0]
@@ -257,9 +233,7 @@ class DirectoryParser:
                     # Separate datasets by timepoint
                     print(perf_counter(), 'Splitting dataset by time-point.')
                     n_ds = group.split_times(ds)
-                    # TODO: why is ds.ds.title changing after this?
-
-
+                    
                     # Finish processing the new datasets created by split.
                     # TODO: this may be better off in the split_times function, or in between.
                     for i in range(len(group.processed) - n_ds, len(group.processed)):  #, new_ds in enumerate(group.processed[-n_ds:]):
@@ -277,17 +251,8 @@ class DirectoryParser:
                             new_ds.attrs['MONC time'] = new_ds.time.data.tolist()
 
                         # Update title
-                        # print(f"Before:\n0: {group.processed[0].attrs['title']}\n1: {group.processed[1].attrs['title']}")
-                        # title = group.stem + group.name if group.name not in group.stem else group.stem.strip('_ ,+')
-                        # title += f'_{int(new_ds.attrs["MONC time"])}'
                         title = new_ds.attrs['title']
                         print(perf_counter(), 'Creating file from dataset', title)
-
-                        # if 'title' in ds.split_attrs:
-                        #     new_ds.attrs['title'] = title
-
-                        # print(f"After:\n0: {group.processed[0].attrs['title']}\n1: {group.processed[1].attrs['title']}")
-                        
 
                         if i < len(group.processed) - 1:
                             # Remove unknown attribute values for all but last 
@@ -317,12 +282,11 @@ class DirectoryParser:
                             path=filepath, 
                             encoding=encodings)  # , engine='h5netcdf'
 
-                        # Run each file through cf-checker
+                        # TODO: Run each file through cf-checker
+
 
                         print(perf_counter(), 'Closing new dataset.')
                         new_ds.close()  # Free up some memory; will this interfere if managing write using dask?
-                    # print(perf_counter(), 'Closing source dataset.')
-                    # ds.ds.close()  # Free up some more memory
                 
                 else:
                     print(perf_counter(), 'Creating file from dataset', title)
@@ -340,9 +304,7 @@ class DirectoryParser:
                             '_FillValue': None
                         } for k, v in ds.ds.variables.items()
                     }  # if k == 'options_database' or k in ds.ds.coords
-                    # for k, v in ds.ds.attrs.items():
-                    #     encodings.update(k={'dtype': ''})
-
+                    
                     ds.ds.to_netcdf(path=filepath, encoding=encodings)
 
                     # TODO: Run each file through cf-checker
@@ -352,7 +314,7 @@ class DirectoryParser:
                     # Update group.processed with current version of dataset
                     group.processed = ds.ds  # Expects xr.Dataset
         
-        print(perf_counter(), 'Done processing groups. Probably doing some housekeeping now.')
+        print(perf_counter(), 'Done processing groups.')
 
     def get_ref_var(self, variable: str) -> xr.DataArray:
         if variable not in self.variables:
@@ -433,7 +395,6 @@ class MoncDataset:
                     self.ds = None
         else:
             raise ValueError('Either a filepath (string) or xarray.Dataset must be passed in.')
-        # data_vars = [MoncVariable(data_array=var) for var in ds.data_vars.values()]
         if self.ds:
             self.options = None
             self.set_options(fields=CONFIG['options_to_attrs'])
@@ -482,11 +443,6 @@ class MoncDataset:
         
     def options_to_attrs(self):
         self.ds = self.ds.assign_attrs(**self.options)
-        # print(self.ds.attrs)
-        # for k, v in self.options.items():
-        #     # print(f"{k} ({type(v)}) = {v}")
-        #     self.ds.attrs[k] = v
-            # print(self.ds.attrs[k].dtype)
         
     def add_cf_attrs(self, **kwargs):
         # TODO: <version> and <url> and any other required data will be assigned during packaging.
@@ -509,8 +465,6 @@ class MoncDataset:
         
         last_time_point = self.ds[self.time_var].data[-1]
         globals = {}
-        # if isinstance(attr, (list, set, tuple)) and all(
-        #     [isinstance(a, str) for a in attr]):
         if all([isinstance(a, str) for a in attr]):
             for g in attr:
                 name = g.replace(' ', '_')  # TODO: Replace this with a full "safe_string" function
@@ -526,27 +480,12 @@ class MoncDataset:
                     data=data,
                     coords={self.time_var: coords},
                     dims=(self.time_var,)
-                )
+                )  # TODO: Test reverting to globals[name] = ...
         else:
             raise TypeError('attr must be a string, a collection of strings, or None.')
         self.ds = self.ds.assign(
             {name: array for name, array in globals.items()}
         )
-
-    # def var_from_global(self, attr: str) -> xr.DataArray:
-    #         name = attr.replace(' ', '_')  # TODO: Replace this with a full "safe_string" function
-    #         if name in self.do_not_duplicate:
-    #             data = type_from_str(self.ds.attrs[attr])
-    #             coords = (last_time_point,)
-    #         else:
-    #             data = [type_from_str(self.ds.attrs[attr])]*len(self.ds[self.time_var].data)
-    #             coords = self.ds[self.time_var]
-    #         return xr.DataArray(
-    #             name=name,
-    #             data=data,
-    #             coords={self.time_var: coords},
-    #             dims=(self.time_var,)
-    #         )
 
     def missing_coords(self):
         '''
@@ -562,9 +501,6 @@ class MoncDataset:
                     dim_type = self.ds.coords[dim].dtype
             elif dim not in OPTIONS_DATABASE['dimensions']:
                 missing.append(dim)
-        # missing = [dim for dim in self.ds.dims if (
-        #     dim not in self.ds.coords and
-        #     dim not in OPTIONS_DATABASE['dimensions'])]
         
         # Look for any coordinates listed in config file that weren't already found in missing coordinates
         # [missing.append(dim) for dim in CONFIG['new_coordinate_variables'].keys() if dim not in missing]  # Remove this: it causes coordinates to be added when they are not present in any variables' dimensions
@@ -617,8 +553,6 @@ class MoncDataset:
 
             # Add new coordinate variable to dataset
             self.ds = self.ds.assign(variables={dim: new_var})
-        
-        
 
     def cf_var(self, variable: str = None, time_units: TimeUnits = None, parser: DirectoryParser = None) -> None:
         # If no variable specified, attempt to process all variables present.
@@ -803,20 +737,6 @@ class MoncDataset:
             absolute = self.ds[variable] + ref_var
             self.ds[variable] = absolute
 
-        # return new version of variable's data array.
-        pass
-
-
-# class MoncVariable(xr.DataArray):
-#     __slots__ = ()
-
-#     def __init__(self, data: Any = dtypes.NA, coords: Sequence[Tuple] | Mapping[Any, Any] | None = None, dims: Hashable | Sequence[Hashable] | None = None, name: Hashable = None, attrs: Mapping = None, indexes: Dict = None, fastpath: bool = False, data_array: xr.DataArray = None):
-        
-#         if data_array is not None:
-#             super().__init__(data=data_array.data, coords=data_array.coords, dims=data_array.dims, name=data_array.name, attrs=data_array.attrs, indexes=data_array.indexes)
-#         else:
-#             super().__init__(data=data, coords=coords, dims=dims, name=name, attrs=attrs, indexes=indexes, fastpath=fastpath)
-
 
 class DsGroup:
     '''
@@ -848,7 +768,6 @@ class DsGroup:
                 self.filepaths += group.filepaths
             self.to_merge = [group.processed for group in groups]
             self.processed = None
-            # self.process()
         else:
             self.name = name
             self.action = action.lower()
@@ -856,8 +775,6 @@ class DsGroup:
                 self.process = self.split_times
             elif self.action == 'merge':
                 self.process = self.merge_times
-            # elif self.action = 'merge_groups':
-            #     self.process = self.merge_groups
             else:
                 self.process = self.keep_time_series
             self.filepaths = filepaths if filepaths else []  # Cannot set default valueas an empty list  in arguments, or it assigns SAME empty list to every instance.
@@ -886,17 +803,6 @@ class DsGroup:
         if not self.time_var:
             self.time_var = self.datasets[-1].time_var
 
-    # def stem_str(self, *args):
-    #     if not args:
-    #         raise ValueError('At least one filename/path must be provided.')
-    #     filenames = [os.path.splitext(os.path.basename(path))[0] for path in args]  # If each path contains only a filename (no extension) this will still work.
-    #     stem = filenames[0]
-    #     if len(args) > 1:
-    #         for f in filenames[1:]:
-    #             match = SequenceMatcher(a=stem, b=f).find_longest_match()
-    #             stem = stem[match.a: match.a + match.size]
-    #     return stem
-
     def keep_time_series(self):
         # copy all datasets/files into self.processed
         self.processed = [ds for ds in self.datasets]
@@ -921,7 +827,6 @@ class DsGroup:
             data_vars='minimal'
         )
         self.processed.attrs['created'] = np.str_(created)
-        # print('Created attr set to:', self.processed.attrs['created'])
 
     def split_times(self, dataset: MoncDataset) -> int:
         # Because xarray.Dataset.sel only creates datasets that point to the
@@ -947,30 +852,6 @@ class DsGroup:
         self.processed = merge_dimensions(*self.to_merge)
         self.processed.attrs['title'] = self.name
         
-
-# class DimGroup:
-#     def __init__(self, group: DsGroup) -> None:
-#         self.group = group
-
-#     def add_file(self, n_dims: int, filepath: str):
-#         if n_dims in self.groups:
-#             self.groups[n_dims].add(filepath)
-#         else:
-#             self.groups[n_dims] = DsGroup(
-#                 name=self.DIM_GROUPS[n_dims]['group'],
-#                 action=self.DIM_GROUPS[n_dims]['action'],
-#                 filepaths=[filepath]
-#             )
-
-#     def merge_dims(self, *args):
-#         to_merge = {}
-#         # Find dims to merge
-#         for group, action in self.DIM_ACTIONS.items():
-#             to_merge[group] = [n_dims for n_dims, name in self.DIM_GROUPS.items() if name == group and action == 'merge']
-#             if len(to_merge[group]) <= 1:
-#                 to_merge.pop(group)
-#         print(to_merge)
-
 
 def test():
     data_dir = os.path.join(os.path.dirname(app_dir), 'test_data')
