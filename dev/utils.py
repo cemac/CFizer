@@ -4,6 +4,7 @@ from datetime import timedelta, datetime
 from cfunits import Units
 import os
 from difflib import SequenceMatcher
+import numpy as np
 
 
 def performance_time(func):
@@ -58,16 +59,19 @@ def is_sequence_of(object, type: type):
 
 
 def type_from_str(string: str):
-    
+    '''
+    Uses numpy dtypes, to ensure xarray.Dataset.to_netcdf gives predictable 
+    results.
+    '''
     if not isinstance(string, str):
         # Can't work with it, so return as is.
-        return string
+        return np.str(string)
     # Because xarray doesn't accept bool or np.bool_ values for variables/
     # attributes, leave any of these as strings.
     if string.lower() == 'true':
-        return string.lower()  # return True
+        return np.str(string.lower())  # return True
     elif string.lower() == 'false':
-        return string.lower()  # return False
+        return np.str(string.lower())  # return False
     else:
         try:
             float(string)
@@ -75,7 +79,7 @@ def type_from_str(string: str):
             # decimal points or scientific notation.
         except ValueError:
             # not a number
-            return string  # leave as a string
+            return np.str(string)  # leave as a string
         else:
             if '.' not in string:
                 try:
@@ -83,11 +87,11 @@ def type_from_str(string: str):
                 except ValueError:
                     # not an integer;
                     # should never reach this option.
-                    return float(string)
+                    return np.float32(string)
                 else:
-                    return int(string)
+                    return np.int32(string)
             else:
-                return float(string)  # floating point, whether integer or not
+                return np.float32(string)  # floating point, whether integer or not
 
 
 def decode_time_units(units: str) -> tuple:
