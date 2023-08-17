@@ -195,6 +195,7 @@ class DirectoryParser:
 
             # combine filename stem & name from relevant group, to use as title
             title = group.stem + group.name if group.name not in group.stem else group.stem.strip('_ ,+')
+            # print(f'title: {title}')
 
             if group.action == 'split':
                 # Process each dataset in group. Group won't have a processed attribute yet.
@@ -208,14 +209,17 @@ class DirectoryParser:
                 # Convert required `options_database` items to global attrs.
                 print(perf_counter(), 'Adding attributes from options database.')
                 ds.options_to_attrs()  # This ds is the same object as to_process[0]
+                # print(f'Options -> Attrs done. title: {title}; ds title: {ds.ds.title}')
 
                 # Add CF-required globals, using data from config file.
                 print(perf_counter(), 'Adding attributes required by CF.')
                 ds.add_cf_attrs(title=title)
+                # print(f'title: {title}; ds title: {ds.ds.title}')
 
                 # add missing coordinate variables
                 print(perf_counter(), 'Adding any missing coordinate variables.')
                 ds.missing_coords()
+                # print(f'Coords updated. title: {title}; ds title: {ds.ds.title}')
 
                 # Apply CF-required updates to all variables, using vocabulary.
                 # Need to pass in self, to give access to variable dictionary,
@@ -223,6 +227,7 @@ class DirectoryParser:
                 # absolutes.
                 print(perf_counter(), 'Making variables CF-compliant.')
                 ds.cf_var(time_units=self.time_units, parser=self)
+                # print(f'Vars CFized. title: {title}; ds title: {ds.ds.title}')
                 if group.time_var != ds.time_var:
                     # group.time_var = ds.time_var
                     self.processed[name].time_var = ds.time_var  # This assigns to the original group, rather than the ephemeral reference, group.
@@ -237,7 +242,9 @@ class DirectoryParser:
                     # Finish processing the new datasets created by split.
                     # TODO: this may be better off in the split_times function, or in between.
                     for i in range(len(group.processed) - n_ds, len(group.processed)):  #, new_ds in enumerate(group.processed[-n_ds:]):
+                        
                         new_ds = group.processed[i]
+                        # print(f'New sub-ds: title: {title}; ds title: {new_ds.title}')
                         # update or drop `Previous diagnostic write at` & `MONC time`.
                         if 'Previous diagnostic write at' in ds.split_attrs:
                             if i == 0:
@@ -249,6 +256,8 @@ class DirectoryParser:
                         
                         if 'MONC time' in ds.split_attrs:
                             new_ds.attrs['MONC time'] = new_ds.time.data.tolist()
+
+                        # print(f'attrs updated: title: {title}; ds title: {new_ds.title}')
 
                         # Update title
                         title = new_ds.attrs['title']
@@ -287,6 +296,10 @@ class DirectoryParser:
 
                         print(perf_counter(), 'Closing new dataset.')
                         new_ds.close()  # Free up some memory; will this interfere if managing write using dask?
+
+                    # Reset title to stem, ready to process next file.
+                    title = group.stem + group.name if group.name not in group.stem else group.stem.strip('_ ,+')
+                    # print(f'title: {title}')
                 
                 else:
                     print(perf_counter(), 'Creating file from dataset', title)
