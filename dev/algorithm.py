@@ -428,7 +428,7 @@ class DirectoryParser:
                 title = group.stem + group.name if group.name not in group.stem else group.stem
                 
                 # For each filepath in group:
-                for path in group.filepaths:
+                for path in group.filepaths[:5]:
 
                     # Open as dataset
                     with xr.open_dataset(path, decode_times=False) as ds:
