@@ -85,11 +85,14 @@ def split_ds(dataset: xr.Dataset, var: str = 'time') -> list[xr.Dataset]:
     # must be deep-copied.
 
     # TODO: check groupby creates independent datasets. If not, need to copy.
+
     if var not in dataset.dims:
         raise AttributeError(f'split_ds: {var} not in dataset dimensions.')
+    print(f'Splitting dataset {dataset.attrs["title"]} by {var}.')
     grouped = {v: ds for (v, ds) in dataset.groupby(var)}
     for k, v in grouped.items():
         v.attrs['title'] = v.attrs['title'] + '_' + str(int(k))
+        print(f'Created new dataset with title, {v.attrs["title"]}')
     split = list(grouped.values())
     return split
 
@@ -304,10 +307,11 @@ class DirectoryParser:
                     n_dims = get_n_dims(ds) - 1  # Subtract 1 for time.
                     # Add filepath to relevant dimension group.
                     self.by_dim[n_dims].add(filepath=filepath)
-                    
+                    print(f"{op.basename(filepath)}: {n_dims} spatial dimensions.")
                 else:
                     # Categorise as potential input file
                     self.input_files.append(filepath)
+                    print(f"{op.basename}: possible input file.")
         
     def time_units_from_input(self) -> TimeUnits:
         '''
@@ -369,6 +373,8 @@ class DirectoryParser:
             ) else self.by_dim
         
         for dim, group in to_process.items():
+
+            print(f"Processing {dim}:{group.name}.")
             
             # If group is to be merged:
             if group.action == 'merge':
@@ -459,6 +465,7 @@ def main():
     source = '/gws/nopw/j04/eurec4auk/monc_prelim_output/jan_28_3d'
     target = '~/cfizer/testing'
     try:
+        print("Creating directory parser, to process", source)
         parser = DirectoryParser(directory=source,
                                  target=target)
     except OSError as e:
