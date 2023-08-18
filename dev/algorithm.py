@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 # Initialise, incl. from VOCAB & CONFIG files.
 from setup import *
 import xarray as xr
