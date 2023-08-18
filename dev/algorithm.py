@@ -468,8 +468,10 @@ def main():
 
     # TODO: Set directory to parse & target directory.
     source = '/gws/nopw/j04/eurec4auk/monc_prelim_output/jan_28_3d'
+    target = '~/cfizer/testing'
     try:
-        parser = DirectoryParser(directory=source)
+        parser = DirectoryParser(directory=source
+                                 target=target)
     except OSError as e:
         print(e)
         exit(1)
