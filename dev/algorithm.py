@@ -91,7 +91,7 @@ def split_ds(dataset: xr.Dataset, var: str = 'time') -> list[xr.Dataset]:
     print(f'Splitting dataset {dataset.attrs["title"]} by {var}.')
     grouped = {v: ds for (v, ds) in dataset.groupby(var)}
     for k, v in grouped.items():
-        v.attrs['title'] = v.attrs['title'] + '_' + str(int(k))
+        v.attrs['title'] = v.attrs['title'].strip('_ +,.&') + '_' + str(int(k))
         print(f'Created new dataset with title, {v.attrs["title"]}')
     split = list(grouped.values())
     return split
@@ -188,6 +188,8 @@ class DsGroup:
         # Update name stem common to all files in group.
         self.stem = stem_str(self.stem, filepath)
 
+        print(f"Added {op.basename(filepath)} to {self.name}; stem: {self.stem}")
+
         # If don't have a time variable yet, attempt to find in new file.
         if not self.time_var:
             try:
@@ -267,10 +269,13 @@ class DirectoryParser:
               self.directory), f'{op.basename(self.directory)}+processed'
             )
         # If target directory doesn't exist, create it.
-        if not os.path.exists(self.target_dir):
+        if not op.exists(self.target_dir):
+            print(f'{self.target_dir} does not yet exist: making...')
             try:
                 os.makedirs(self.target_dir)
+                print(f'{self.target_dir} now exists? {op.exists(self.target_dir)}')
             except Exception as e:
+                print(e)
                 raise e
         self.input_files = []
         # Set up dict to categorize MONC outputs by number of spatial dimensions
@@ -297,6 +302,7 @@ class DirectoryParser:
         It would be best if all files of a given run were in one directory, 
         rather than split between 0-2d and 3d.
         '''
+        print('Categorising fields by dimension')
         # For each NC file in source directory (recursive parsing or not?):
         for filepath in iglob(f'{op.join(self.directory, "*.nc")}', 
                           root_dir=os.pathsep, 
@@ -419,50 +425,73 @@ class DirectoryParser:
             # If not merging:
             else:
                 # Derive base title/filename from group's stem & dimension
-                title = group.stem + group.name
+                title = group.stem + group.name if group.name not in group.stem else group.stem
                 
                 # For each filepath in group:
                 for path in group.filepaths:
 
                     # Open as dataset
                     with xr.open_dataset(path, decode_times=False) as ds:
+
+                        # Update dataset's title
+                        ds.attrs['title'] = title
                     
                         # apply chunking if large (e.g. ds.nbytes >= 1e9).
 
                         #Call CF compliance function
                         
                         if group.action == 'split':
-                            # Split dataset by time-point, yielding multiple new 
-                            # datasets.
-                            group.processed += split_ds(dataset=ds,
-                                                        var=group.time_var)
+                            # Split dataset by time-point, yielding multiple 
+                            # new datasets.
+                            group.processed = split_ds(dataset=ds,
+                                                       var=group.time_var)
+                            # group.processed only ever needs to hold latest
+                            # collection of datasets.
+
+                            ds.close()
                         else:
                             # Copy dataset as-is into self.processed
-                            group.processed.append(ds)  # This should be wrapped in a DsGroup function
+                            group.processed = [ds]  # This should be wrapped in a DsGroup function
 
-                    # For each new dataset:
-                    for ds in group.processed:
-                        # Derive new title
+                        # For each new dataset:
+                        for new_ds in group.processed:
+                            # Derive new title
 
-                        # Update required global attributes (MONC time, title, 
-                        # MONC timestep, (previous diagnostic write at?)).
+                            # Update required global attributes (MONC time, title, 
+                            # MONC timestep, (previous diagnostic write at?)).
 
-                        # set filepath
+                            # set filepath
+                            filepath = op.join(
+                                self.target_dir, f"{new_ds.attrs['title']}.nc"
+                                )
+                            print(f"Saving new dataset as {filepath}.")
 
-                        # set encodings
+                            # set encodings
+                            encodings = {
+                                k:{
+                                    'dtype': v.dtype,
+                                    '_FillValue': None
+                                } for k, v in new_ds.variables.items()
+                            }
 
-                        # Export to NetCDF (set as single-command function, so 
-                        # can wrap in performance_time). Use compute=False 
-                        # option, then call compute() on resulting 
-                        # dask.delayed.Delayed object.
+                            # Export to NetCDF (set as single-command function, so 
+                            # can wrap in performance_time). Use compute=False 
+                            # option, then call compute() on resulting 
+                            # dask.delayed.Delayed object.
+                            new_ds.to_netcdf(
+                                path=filepath, 
+                                encoding=encodings)
 
-                        # Close new dataset: NEED TO CHECK dask.delayed.Delayed 
-                        # object doesn't need dataset to remain open until it 
-                        # completes.
+                            # Close new dataset: NEED TO CHECK 
+                            # dask.delayed.Delayed object doesn't need dataset 
+                            # to remain open until it completes.
+                            new_ds.close()
 
-                        # Run CF checker on output file
+                            # Run CF checker on output file
 
-                        pass
+                        # If worked on single dataset, close it.
+                        if len(group.processed) == 1:
+                            group.processed[0].close()
 
 
 def main():
@@ -471,6 +500,8 @@ def main():
     # TODO: Set directory to parse & target directory.
     source = '/gws/nopw/j04/eurec4auk/monc_prelim_output/jan_28_3d'
     target = '~/cfizer/testing'
+    # source = os.path.join(os.path.dirname(app_dir), 'test_data')
+    # target = None
     try:
         print("Creating directory parser, to process", source)
         parser = DirectoryParser(directory=source,
