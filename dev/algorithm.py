@@ -305,17 +305,6 @@ class DirectoryParser:
                     # Add filepath to relevant dimension group.
                     self.by_dim[n_dims].add(filepath=filepath)
                     
-                    if len(self.by_dim[n_dims].filepaths) == 1:
-                        # If first dataset in group, add variables to 
-                        # dictionary linking each variable to its group.
-                        self.variables.update({
-                            v: self.by_dim[n_dims]
-                            for v in ds.variables if v not in self.variables
-                            })
-                        self.variables.update({
-                            v: self.by_dim[n_dims] 
-                            for v in ds.dims if v not in self.variables
-                            })
                 else:
                     # Categorise as potential input file
                     self.input_files.append(filepath)
