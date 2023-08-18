@@ -11,8 +11,86 @@ import numpy as np
 from datetime import datetime
 import typing
 from difflib import SequenceMatcher
-from utils import performance_time
+# from utils import performance_time
 from dask.delayed import Delayed
+from dask.diagnostics import ProgressBar
+from time import perf_counter
+from multiprocessing import Process  # multiprocess not available in Jaspy environment.
+
+
+def performance_time(func):
+	def wrapper(*args, **kwargs):
+		start_time = perf_counter()
+		response = func(*args, **kwargs)  # run the wrapped function
+		end_time = perf_counter()
+		duration = end_time - start_time
+		print(f"{func} on process {os.getpid()} took {duration} seconds.")  # ({args}, {kwargs})
+		return response
+	return wrapper
+
+
+def process_3d(filepath, title, time_var, target_dir):
+    print(op.basename(filepath), "- process_3d - process id:", os.getpid())
+    with xr.open_dataset(filepath, 
+                         decode_times=False,
+                         chunks={'z': 11, 'zn': 11}
+                         ) as ds:
+        # Update dataset's title
+        ds.attrs['title'] = title
+    
+        # apply chunking if large (e.g. ds.nbytes >= 1e9).
+
+        #Call CF compliance function
+        
+        # Split dataset by time-point, yielding multiple 
+        # new datasets.
+        processed = split_ds(dataset=ds, 
+                             var=time_var)
+        # processed only ever needs to hold latest collection of datasets.
+
+    writers = []
+    # For each new dataset:
+    for ds in processed:
+        # Derive new title
+
+        # Update required global attributes (MONC time, title, 
+        # MONC timestep, (previous diagnostic write at?)).
+
+        # set filepath
+        filepath = op.join(
+            target_dir, f"{ds.attrs['title']}.nc"
+            )
+        # set encodings
+        encodings = {
+            k:{
+                'dtype': v.dtype,
+                '_FillValue': None
+            } for k, v in ds.variables.items()
+        }
+
+        # Export to NetCDF (set as single-command function, 
+        # so can wrap in performance_time).
+        # TODO: Use compute=False option, then call 
+        # compute() on resulting dask.delayed.Delayed 
+        # object?
+        # if i == 0:
+        #     # Test regular save function
+        #     print(f"Saving new dataset as {filepath}.")
+        #     ds_to_nc(ds=ds,
+        #             filepath=filepath,
+        #             encodings=encodings)
+        # else:
+        # Test dask version
+        print(f"Preparing delayed writer for {filepath}.")
+        writers.append(ds_to_nc_dask(ds=ds,
+                                filepath=filepath,
+                                encodings=encodings
+                                ))
+        ds.close()
+    print(f"Computing writes.")
+    [perform_write(writer) for writer in writers]
+    
+    # Run CF checker on output files
 
 
 def stem_str(*args: str):
@@ -410,6 +488,8 @@ class DirectoryParser:
     @performance_time
     def process_by_dim(self, dim: int = None) -> None:
 
+        processes = []
+
         to_process = {dim: self.by_dim[dim]} if (
             dim and dim in self.by_dim
             ) else self.by_dim
@@ -458,94 +538,118 @@ class DirectoryParser:
                 title = group.stem + group.name if group.name not in group.stem else group.stem
                 
                 writers = []
-                # For each filepath in group:
-                for i, path in enumerate(group.filepaths[:4]):
-                    
-                    # Open as dataset
-                    with xr.open_dataset(path, 
-                                         decode_times=False, 
-                                         chunks={'z': 11, 'zn':11}) as ds:
+                
+                if group.action == 'split':
+                    # For each filepath in group, process in a separate Process
+                    processes += [Process(
+                        target=process_3d, 
+                        kwargs={'filepath':path, 
+                                'title':title, 
+                                'time_var':group.time_var, 
+                                'target_dir':self.target_dir}
+                        ) for path in group.filepaths[1:]]
+                    [p.start() for p in processes[-2:]]  # TODO: this needs to know how many time points are in the file.
 
-                        # Update dataset's title
-                        ds.attrs['title'] = title
-                    
-                        # apply chunking if large (e.g. ds.nbytes >= 1e9).
+                    # Continue on local process
+                    process_3d(
+                        filepath=group.filepaths[0],
+                        title=title,
+                        time_var=group.time_var,
+                        target_dir=self.target_dir
+                    )
+                else:
+                    # For each filepath in group:
+                    for i, path in enumerate(group.filepaths[:4]):
+                        # Open as dataset
+                        with xr.open_dataset(path, 
+                                            decode_times=False, 
+                                            chunks={'z': 11, 'zn':11}) as ds:
 
-                        #Call CF compliance function
+                            # Update dataset's title
+                            ds.attrs['title'] = title
                         
-                        if group.action == 'split':
-                            # Split dataset by time-point, yielding multiple 
-                            # new datasets.
-                            group.processed = split_ds(dataset=ds,
-                                                       var=group.time_var)
-                            # group.processed only ever needs to hold latest
-                            # collection of datasets.
+                            # apply chunking if large (e.g. ds.nbytes >= 1e9).
 
-                            ds.close()
-                        else:
-                            # Copy dataset as-is into self.processed
-                            group.processed = [ds]  # This should be wrapped in a DsGroup function
-
-                        # For each new dataset:
-                        for new_ds in group.processed:
-                            # Derive new title
-
-                            # Update required global attributes (MONC time, title, 
-                            # MONC timestep, (previous diagnostic write at?)).
-
-                            # set filepath
-                            filepath = op.join(
-                                self.target_dir, f"{new_ds.attrs['title']}.nc"
-                                )
-                            # set encodings
-                            encodings = {
-                                k:{
-                                    'dtype': v.dtype,
-                                    '_FillValue': None
-                                } for k, v in new_ds.variables.items()
-                            }
-
-                            # Export to NetCDF (set as single-command function, 
-                            # so can wrap in performance_time).
-                            # TODO: Use compute=False option, then call 
-                            # compute() on resulting dask.delayed.Delayed 
-                            # object?
-                            if i<2:
-                                # Test regular save function
-                                print(f"Saving new dataset as {filepath}.")
-                                ds_to_nc(ds=new_ds,
-                                         filepath=filepath,
-                                         encodings=encodings)
-                            else:
-                                # Test dask version
-                                print(f"Preparing delayed writers for {filepath}.")
-                                writers.append(ds_to_nc_dask(ds=new_ds,
-                                         filepath=filepath,
-                                         encodings=encodings))
-                            # new_ds.to_netcdf(
-                            #     path=filepath, 
-                            #     encoding=encodings)
-
-                            # Close new dataset: NEED TO CHECK 
-                            # dask.delayed.Delayed object doesn't need dataset 
-                            # to remain open until it completes.
-                            new_ds.close()
-
-                            # Run CF checker on output file
-
-                        if i > 1:
-                            print(f"Computing last {len(group.processed)} writers.")
-                            [perform_write(writer) 
-                             for writer in writers[-len(group.processed):]
-                             ]
+                            #Call CF compliance function
                             
-                        # If worked on single dataset, close it.
-                        if len(group.processed) == 1:
-                            group.processed[0].close()
+                            if group.action == 'split':
+                                # Split dataset by time-point, yielding multiple 
+                                # new datasets.
+                                group.processed = split_ds(dataset=ds,
+                                                        var=group.time_var)
+                                # group.processed only ever needs to hold latest
+                                # collection of datasets.
+
+                                ds.close()
+                            else:
+                                # Copy dataset as-is into self.processed
+                                group.processed = [ds]  # This should be wrapped in a DsGroup function
+
+                            # For each new dataset:
+                            for new_ds in group.processed:
+                                # Derive new title
+
+                                # Update required global attributes (MONC time, title, 
+                                # MONC timestep, (previous diagnostic write at?)).
+
+                                # set filepath
+                                filepath = op.join(
+                                    self.target_dir, f"{new_ds.attrs['title']}.nc"
+                                    )
+                                # set encodings
+                                encodings = {
+                                    k:{
+                                        'dtype': v.dtype,
+                                        '_FillValue': None
+                                    } for k, v in new_ds.variables.items()
+                                }
+
+                                # Export to NetCDF (set as single-command function, 
+                                # so can wrap in performance_time).
+                                # TODO: Use compute=False option, then call 
+                                # compute() on resulting dask.delayed.Delayed 
+                                # object?
+                                if i<2:
+                                    # Test regular save function
+                                    print(f"Saving new dataset as {filepath}.")
+                                    ds_to_nc(ds=new_ds,
+                                            filepath=filepath,
+                                            encodings=encodings)
+                                else:
+                                    # Test dask version
+                                    print(f"Preparing delayed writers for {filepath}.")
+                                    writers.append(ds_to_nc_dask(ds=new_ds,
+                                            filepath=filepath,
+                                            encodings=encodings))
+                                # new_ds.to_netcdf(
+                                #     path=filepath, 
+                                #     encoding=encodings)
+
+                                # Close new dataset: NEED TO CHECK 
+                                # dask.delayed.Delayed object doesn't need dataset 
+                                # to remain open until it completes.
+                                new_ds.close()
+
+                                # Run CF checker on output file
+
+                            if i > 1:
+                                print(f"Computing last {len(group.processed)} writers.")
+                                [perform_write(writer) 
+                                for writer in writers[-len(group.processed):]
+                                ]
+                                
+                            # If worked on single dataset, close it.
+                            if len(group.processed) == 1:
+                                group.processed[0].close()
+
+        [p.join() for p in processes]
 
 
 @performance_time
 def main():
+
+    print("Main app process id:", os.getpid())
+    
     # TODO: Validate supplied arguments/directory
 
     # TODO: Set directory to parse & target directory.
