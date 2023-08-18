@@ -11,6 +11,7 @@ import numpy as np
 from datetime import datetime
 import typing
 from difflib import SequenceMatcher
+from utils import performance_time
 
 
 def stem_str(*args: str):
@@ -80,6 +81,7 @@ def get_n_dims(dataset: xr.Dataset) -> int:
         ])
 
 
+@performance_time
 def split_ds(dataset: xr.Dataset, var: str = 'time') -> list[xr.Dataset]:
     # Because xarray.Dataset.sel only creates datasets that point to the
     # original, any changes to global attributes etc in one dataset will
@@ -97,6 +99,14 @@ def split_ds(dataset: xr.Dataset, var: str = 'time') -> list[xr.Dataset]:
         print(f'Created new dataset with title, {v.attrs["title"]}')
     split = list(grouped.values())
     return split
+
+
+@performance_time
+def ds_to_nc(ds: xr.Dataset, filepath: str, encodings: dict = None) -> None:
+    ds.to_netcdf(
+        path=filepath, 
+        encoding=encodings
+        )
 
 
 class DsGroup:
@@ -293,6 +303,7 @@ class DirectoryParser:
         # Assume time units will be common to all.
         self.time_units = self.time_units_from_input() if self.input_files else None
 
+    @performance_time
     def sort_nc(self) -> None:
         '''
         Sorts into MONC output files and other NC files, the latter listed as
@@ -326,7 +337,8 @@ class DirectoryParser:
                     # Categorise as potential input file
                     self.input_files.append(filepath)
                     # print(f"{op.basename}: possible input file.")
-        
+    
+    @performance_time
     def time_units_from_input(self) -> TimeUnits:
         '''
         Attempt to find time unit data in possible input file(s).
@@ -380,6 +392,7 @@ class DirectoryParser:
             else:
                 return time_units
 
+    @performance_time
     def process_by_dim(self, dim: int = None) -> None:
 
         to_process = {dim: self.by_dim[dim]} if (
@@ -476,13 +489,17 @@ class DirectoryParser:
                                 } for k, v in new_ds.variables.items()
                             }
 
-                            # Export to NetCDF (set as single-command function, so 
-                            # can wrap in performance_time). Use compute=False 
-                            # option, then call compute() on resulting 
-                            # dask.delayed.Delayed object.
-                            new_ds.to_netcdf(
-                                path=filepath, 
-                                encoding=encodings)
+                            # Export to NetCDF (set as single-command function, 
+                            # so can wrap in performance_time).
+                            # TODO: Use compute=False option, then call 
+                            # compute() on resulting dask.delayed.Delayed 
+                            # object?
+                            ds_to_nc(ds=new_ds,
+                                     filepath=filepath,
+                                     encodings=encodings)
+                            # new_ds.to_netcdf(
+                            #     path=filepath, 
+                            #     encoding=encodings)
 
                             # Close new dataset: NEED TO CHECK 
                             # dask.delayed.Delayed object doesn't need dataset 
@@ -496,6 +513,7 @@ class DirectoryParser:
                             group.processed[0].close()
 
 
+@performance_time
 def main():
     # TODO: Validate supplied arguments/directory
 
