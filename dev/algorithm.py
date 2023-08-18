@@ -110,7 +110,7 @@ def ds_to_nc(ds: xr.Dataset, filepath: str, encodings: dict = None) -> None:
     
 
 @performance_time
-def ds_to_nc_dask(ds: xr.Dataset, filepath: str, encodings: dict = None) -> None:
+def ds_to_nc_dask(ds: xr.Dataset, filepath: str, encodings: dict = None) -> Delayed:
     return ds.to_netcdf(
         path=filepath, 
         encoding=encodings, 
@@ -215,7 +215,7 @@ class DsGroup:
         # Update name stem common to all files in group.
         self.stem = stem_str(self.stem, filepath)
 
-        print(f"Added {op.basename(filepath)} to {self.name}; stem: {self.stem}")
+        # print(f"Added {op.basename(filepath)} to {self.name}; stem: {self.stem}")
 
         # If don't have a time variable yet, attempt to find in new file.
         if not self.time_var:
@@ -459,10 +459,12 @@ class DirectoryParser:
                 
                 writers = []
                 # For each filepath in group:
-                for i, path in enumerate(group.filepaths[:6]):
+                for i, path in enumerate(group.filepaths[:4]):
                     
                     # Open as dataset
-                    with xr.open_dataset(path, decode_times=False) as ds:
+                    with xr.open_dataset(path, 
+                                         decode_times=False, 
+                                         chunks={'z': 11, 'zn':11}) as ds:
 
                         # Update dataset's title
                         ds.attrs['title'] = title
@@ -508,7 +510,7 @@ class DirectoryParser:
                             # TODO: Use compute=False option, then call 
                             # compute() on resulting dask.delayed.Delayed 
                             # object?
-                            if i<3:
+                            if i<2:
                                 # Test regular save function
                                 print(f"Saving new dataset as {filepath}.")
                                 ds_to_nc(ds=new_ds,
@@ -531,7 +533,7 @@ class DirectoryParser:
 
                             # Run CF checker on output file
 
-                        if i >= 3:
+                        if i > 1:
                             print(f"Computing last {len(group.processed)} writers.")
                             [perform_write(writer) 
                              for writer in writers[-len(group.processed):]
@@ -547,10 +549,10 @@ def main():
     # TODO: Validate supplied arguments/directory
 
     # TODO: Set directory to parse & target directory.
-    source = '/gws/nopw/j04/eurec4auk/monc_prelim_output/jan_28_3d'
-    target = '/gws/nopw/j04/eurec4auk/cfizer_testing/jan_28_3d'  # op.join(op.dirname(op.dirname(os.getcwd())), 'testing')
-    # source = os.path.join(os.path.dirname(app_dir), 'test_data')
-    # target = None
+    # source = '/gws/nopw/j04/eurec4auk/monc_prelim_output/jan_28_3d'
+    # target = '/gws/nopw/j04/eurec4auk/cfizer_testing/jan_28_3d'  # op.join(op.dirname(op.dirname(os.getcwd())), 'testing')
+    source = os.path.join(os.path.dirname(app_dir), 'test_data')
+    target = None
     try:
         print("Creating directory parser, to process", source)
         print("Putting processed files in", target)
