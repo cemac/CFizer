@@ -499,11 +499,12 @@ def main():
 
     # TODO: Set directory to parse & target directory.
     source = '/gws/nopw/j04/eurec4auk/monc_prelim_output/jan_28_3d'
-    target = '~/cfizer/testing'
+    target = op.join(op.dirname(op.dirname(os.getcwd())), 'testing')  #'~/cfizer/testing'
     # source = os.path.join(os.path.dirname(app_dir), 'test_data')
     # target = None
     try:
         print("Creating directory parser, to process", source)
+        print("Putting processed files in", target)
         parser = DirectoryParser(directory=source,
                                  target=target)
     except OSError as e:
