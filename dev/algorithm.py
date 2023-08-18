@@ -162,8 +162,9 @@ class DsGroup:
                 if self.filepaths:
                     try:
                         self.time_var = get_time_var(
-                            xr.open_dataset(self.filepaths[0])
-                            )
+                            xr.open_dataset(
+                            self.filepaths[0], decode_times=False
+                            ))
                     except:
                         self.time_var = None    # Search in datasets as files 
                                                 # are added.       
@@ -172,7 +173,9 @@ class DsGroup:
                                             # added.
             # self.datasets is a generator, so any changes made to a member
             # object must be saved elsewhere, e.g. self.processed or NC file.
-            self.datasets = (xr.open_dataset(path) for path in self.filepaths)
+            self.datasets = (xr.open_dataset(
+                path, decode_times=False
+                ) for path in self.filepaths)
 
     def add(self, filepath: str = '') -> None:
         
@@ -188,7 +191,10 @@ class DsGroup:
         # If don't have a time variable yet, attempt to find in new file.
         if not self.time_var:
             try:
-                self.time_var = get_time_var(xr.open_dataset(filepath))
+                self.time_var = get_time_var(
+                    xr.open_dataset(filepath), 
+                    decode_times=False
+                    )
             except KeyError:
                 print(f'DsGroup.add: Time variable not found in {filepath}.')
     
@@ -307,11 +313,11 @@ class DirectoryParser:
                     n_dims = get_n_dims(ds) - 1  # Subtract 1 for time.
                     # Add filepath to relevant dimension group.
                     self.by_dim[n_dims].add(filepath=filepath)
-                    print(f"{op.basename(filepath)}: {n_dims} spatial dimensions.")
+                    # print(f"{op.basename(filepath)}: {n_dims} spatial dimensions.")
                 else:
                     # Categorise as potential input file
                     self.input_files.append(filepath)
-                    print(f"{op.basename}: possible input file.")
+                    # print(f"{op.basename}: possible input file.")
         
     def time_units_from_input(self) -> TimeUnits:
         '''
@@ -413,25 +419,26 @@ class DirectoryParser:
             # If not merging:
             else:
                 # Derive base title/filename from group's stem & dimension
+                title = group.stem + group.name
                 
                 # For each filepath in group:
+                for path in group.filepaths:
 
                     # Open as dataset
+                    with xr.open_dataset(path, decode_times=False) as ds:
                     
-                    # apply chunking if large (e.g. ds.nbytes >= 1e9).
+                        # apply chunking if large (e.g. ds.nbytes >= 1e9).
 
-                    #Call CF compliance function
-                    
-                    if group.action == 'split':
-                        # Split dataset by time-point, yielding multiple new 
-                        # datasets.
-                        group.processed += split_ds(dataset=ds,
-                                                    var=group.time_var)
-                    else:
-                        # Copy dataset as-is into self.processed
-                        group.processed.append(ds)  # This should be wrapped in a DsGroup function
-                    # Close original dataset.
-                    ds.close()
+                        #Call CF compliance function
+                        
+                        if group.action == 'split':
+                            # Split dataset by time-point, yielding multiple new 
+                            # datasets.
+                            group.processed += split_ds(dataset=ds,
+                                                        var=group.time_var)
+                        else:
+                            # Copy dataset as-is into self.processed
+                            group.processed.append(ds)  # This should be wrapped in a DsGroup function
 
                     # For each new dataset:
                     for ds in group.processed:
