@@ -12,6 +12,7 @@ from datetime import datetime
 import typing
 from difflib import SequenceMatcher
 from utils import performance_time
+from dask.delayed import Delayed
 
 
 def stem_str(*args: str):
@@ -81,7 +82,6 @@ def get_n_dims(dataset: xr.Dataset) -> int:
         ])
 
 
-@performance_time
 def split_ds(dataset: xr.Dataset, var: str = 'time') -> list[xr.Dataset]:
     # Because xarray.Dataset.sel only creates datasets that point to the
     # original, any changes to global attributes etc in one dataset will
@@ -107,6 +107,21 @@ def ds_to_nc(ds: xr.Dataset, filepath: str, encodings: dict = None) -> None:
         path=filepath, 
         encoding=encodings
         )
+    
+
+@performance_time
+def ds_to_nc_dask(ds: xr.Dataset, filepath: str, encodings: dict = None) -> None:
+    return ds.to_netcdf(
+        path=filepath, 
+        encoding=encodings, 
+        compute=False
+        )
+    # writer.compute()
+
+
+@performance_time
+def perform_write(writer: Delayed) -> None:
+    writer.compute()
 
 
 class DsGroup:
@@ -442,9 +457,10 @@ class DirectoryParser:
                 # Derive base title/filename from group's stem & dimension
                 title = group.stem + group.name if group.name not in group.stem else group.stem
                 
+                writers = []
                 # For each filepath in group:
-                for path in group.filepaths[:5]:
-
+                for i, path in enumerate(group.filepaths[:6]):
+                    
                     # Open as dataset
                     with xr.open_dataset(path, decode_times=False) as ds:
 
@@ -479,8 +495,6 @@ class DirectoryParser:
                             filepath = op.join(
                                 self.target_dir, f"{new_ds.attrs['title']}.nc"
                                 )
-                            print(f"Saving new dataset as {filepath}.")
-
                             # set encodings
                             encodings = {
                                 k:{
@@ -494,9 +508,18 @@ class DirectoryParser:
                             # TODO: Use compute=False option, then call 
                             # compute() on resulting dask.delayed.Delayed 
                             # object?
-                            ds_to_nc(ds=new_ds,
-                                     filepath=filepath,
-                                     encodings=encodings)
+                            if i<3:
+                                # Test regular save function
+                                print(f"Saving new dataset as {filepath}.")
+                                ds_to_nc(ds=new_ds,
+                                         filepath=filepath,
+                                         encodings=encodings)
+                            else:
+                                # Test dask version
+                                print(f"Preparing delayed writers for {filepath}.")
+                                writers.append(ds_to_nc_dask(ds=new_ds,
+                                         filepath=filepath,
+                                         encodings=encodings))
                             # new_ds.to_netcdf(
                             #     path=filepath, 
                             #     encoding=encodings)
@@ -508,6 +531,12 @@ class DirectoryParser:
 
                             # Run CF checker on output file
 
+                        if i >= 3:
+                            print(f"Computing last {len(group.processed)} writers.")
+                            [perform_write(writer) 
+                             for writer in writers[-len(group.processed):]
+                             ]
+                            
                         # If worked on single dataset, close it.
                         if len(group.processed) == 1:
                             group.processed[0].close()
