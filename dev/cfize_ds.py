@@ -131,7 +131,16 @@ def cfize_variables(dataset: xr.Dataset, *args: str) -> xr.Dataset:
             # Pull out reference variable as DataArray.
 
             # Add reference DataArray to perturbation variable DataArray, & 
-            # re-assign to variable.
+            # re-assign to variable as new array with existing attributes etc.
+            absolute = self.ds[variable] + ref_var
+            self.ds[variable] = xr.DataArray(
+                data=absolute.data,
+                coords=self.ds[variable].coords,
+                dims=self.ds[variable].dims,
+                name=self.ds[variable].name,
+                attrs=self.ds[variable].attrs,
+                indexes=self.ds[variable].indexes
+            )
 
     # Return updated dataset.
 
