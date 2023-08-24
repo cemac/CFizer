@@ -14,7 +14,7 @@ from difflib import SequenceMatcher
 # from utils import performance_time
 from dask.delayed import Delayed
 from dask.diagnostics import ProgressBar
-from time import perf_counter
+from time import perf_counter, sleep
 from cfize_ds import cfize_dataset
 from multiprocessing import Process, Pool  # multiprocess not available in Jaspy environment.
 
@@ -295,294 +295,405 @@ class TimeUnits(Units):
             return False
 
 
-class DirectoryParser:
-    def __init__(self,
-                 directory: str = '',
-                 target: str = '') -> None:
-        '''
-        directory:          path of directory containing NC files to be made CF 
-                            compliant.
-        target (optional):  path to which processed files should be written.
-        '''
-        if directory and not op.exists(directory):
-            raise OSError(f'Directory {directory} not found.')
-        self.directory = directory or os.getcwd()
-        self.target_dir = target or op.join(op.dirname(
-              self.directory), f'{op.basename(self.directory)}+processed'
-            )
-        # If target directory doesn't exist, create it.
-        if not op.exists(self.target_dir):
-            print(f'{self.target_dir} does not yet exist: making...')
-            try:
-                os.makedirs(self.target_dir)
-                print(f'{self.target_dir} now exists? {op.exists(self.target_dir)}')
-            except Exception as e:
-                print(e)
-                raise e
-        self.input_files = []
-        # Set up dict to categorize MONC outputs by number of spatial dimensions
-        self.by_dim = {n_dim: DsGroup(
-            name=group, n_dims=n_dim, action=DIM_ACTIONS[group]
-        ) for n_dim, group in DIM_GROUPS.items()}
-        # ID time variable of each group from VOCAB.
+# class DirectoryParser:
+    # def __init__(self,
+    #              directory: str = '',
+    #              target: str = '') -> None:
+    #     '''
+    #     directory:          path of directory containing NC files to be made CF 
+    #                         compliant.
+    #     target (optional):  path to which processed files should be written.
+    #     '''
+        # if directory and not op.exists(directory):
+        #     raise OSError(f'Directory {directory} not found.')
+        # self.directory = directory or os.getcwd()
+        # self.target_dir = target or op.join(op.dirname(
+        #       self.directory), f'{op.basename(self.directory)}+processed'
+        #     )
+        # # If target directory doesn't exist, create it.
+        # if not op.exists(self.target_dir):
+        #     print(f'{self.target_dir} does not yet exist: making...')
+        #     try:
+        #         os.makedirs(self.target_dir)
+        #         print(f'{self.target_dir} now exists? {op.exists(self.target_dir)}')
+        #     except Exception as e:
+        #         print(e)
+        #         raise e
+        # self.input_files = []
+        # # Set up dict to categorize MONC outputs by number of spatial dimensions
+        # self.by_dim = {n_dim: DsGroup(
+        #     name=group, n_dims=n_dim, action=DIM_ACTIONS[group]
+        # ) for n_dim, group in DIM_GROUPS.items()}
+        # # ID time variable of each group from VOCAB.
         
-        # Parse directory & categorise NC files by type and dimensions
-        self.sort_nc()
+        # # Parse directory & categorise NC files by type and dimensions
+        # self.sort_nc()
 
-        # Attempt to derive time unit info.
-        # Assume time units will be common to all.
-        self.time_units = self.time_units_from_input() if self.input_files else None
+        # # Attempt to derive time unit info.
+        # # Assume time units will be common to all.
+        # self.time_units = self.time_units_from_input() if self.input_files else None
 
-    @performance_time
-    def sort_nc(self) -> None:
-        '''
-        Sorts into MONC output files and other NC files, the latter listed as
-        possible input files.
+    # @performance_time
+    # def sort_nc(self) -> None:
+    #     '''
+    #     Sorts into MONC output files and other NC files, the latter listed as
+    #     possible input files.
 
-        It also categorizes the MONC outputs according to their number of 
-        dimensions.
+    #     It also categorizes the MONC outputs according to their number of 
+    #     dimensions.
 
-        It would be best if all files of a given run were in one directory, 
-        rather than split between 0-2d and 3d.
-        '''
-        print('Categorising fields by dimension')
-        # For each NC file in source directory (recursive parsing or not?):
-        for filepath in iglob(f'{op.join(self.directory, "*.nc")}', 
-                          root_dir=os.pathsep, 
-                          recursive=False):
-            with xr.open_dataset(filepath, 
-                                 decode_times=False) as ds:  # concat_characters=False
-                # Using concat_characters=False preserves the string dimension 
-                # of the options_database variable. However, it makes dealing
-                # with the binary -> string conversion painful and messy.
+    #     It would be best if all files of a given run were in one directory, 
+    #     rather than split between 0-2d and 3d.
+    #     '''
+    #     print('Categorising fields by dimension')
+    #     # For each NC file in source directory (recursive parsing or not?):
+    #     for filepath in iglob(f'{op.join(self.directory, "*.nc")}', 
+    #                       root_dir=os.pathsep, 
+    #                       recursive=False):
+    #         with xr.open_dataset(filepath, 
+    #                              decode_times=False) as ds:  # concat_characters=False
+    #             # Using concat_characters=False preserves the string dimension 
+    #             # of the options_database variable. However, it makes dealing
+    #             # with the binary -> string conversion painful and messy.
 
-                # Categorise MONC output / other
-                if is_monc(ds):
-                    # Find number of (non-options-database) dimensions.
-                    n_dims = get_n_dims(ds) - 1  # Subtract 1 for time.
-                    # Add filepath to relevant dimension group.
-                    self.by_dim[n_dims].add(filepath=filepath)
-                    # print(f"{op.basename(filepath)}: {n_dims} spatial dimensions.")
-                else:
-                    # Categorise as potential input file
-                    self.input_files.append(filepath)
-                    # print(f"{op.basename}: possible input file.")
+    #             # Categorise MONC output / other
+    #             if is_monc(ds):
+    #                 # Find number of (non-options-database) dimensions.
+    #                 n_dims = get_n_dims(ds) - 1  # Subtract 1 for time.
+    #                 # Add filepath to relevant dimension group.
+    #                 self.by_dim[n_dims].add(filepath=filepath)
+    #                 # print(f"{op.basename(filepath)}: {n_dims} spatial dimensions.")
+    #             else:
+    #                 # Categorise as potential input file
+    #                 self.input_files.append(filepath)
+    #                 # print(f"{op.basename}: possible input file.")
     
-    @performance_time
-    def time_units_from_input(self) -> TimeUnits:
-        '''
-        Attempt to find time unit data in possible input file(s).
-        Refers to FROM_INPUT_FILE['reftime'] from setup.py, for variable name
-        under which time units are expected.
-        '''
+    
 
-        input_data = {}
-        for f in self.input_files:
-            with xr.open_dataset(op.join(self.directory, f), decode_times=False) as ds:  # , concat_characters=False
-                try:
-                    input_data[f] = ds[FROM_INPUT_FILE['reftime']].attrs
-                except KeyError:
-                    # Variable not found in prospective input file; move on to
-                    # next input file, if any.
-                    continue
-        if len(input_data) != 1:
-            # Request user input for tie-breaking.
-            if len(input_data) > 1:
-                print('Multiple time units found:')
-                for i, u in enumerate(input_data.values()):
-                    print(f'[{i}] {u}')
-                while True:
-                    user_input = input('Please select number or enter units for time, including reference date in ISO format.')
-                    if user_input.isnumeric():
-                        try:
-                            input_data = list(input_data.values())[int(user_input)]
-                        except:
-                            print('Invalid number; try again.')
-                            continue
-                        else:
-                            break
-                    else:
-                        input_data = {'units': user_input}
-            else:
-                input_data = {
-                    'units': 
-                    input('Enter units for time, including reference date in ISO format:')
-                }
-        else:
-            input_data = list(input_data.values())[0]
-        while True:
-            try:
-                time_units = TimeUnits(
-                    units=input_data['units'], 
-                    calendar=input_data['calendar'] if 'calendar' in input_data else DEFAULT_CALENDAR
-                )
-            except ValueError or KeyError as e:
-                input_data['units'] = input(e + 'Enter units for time, including reference date in ISO format:')
-                continue
-            else:
-                return time_units
+    # @performance_time
+    # def process_by_dim(self, dim: int = None) -> str:
 
-    @performance_time
-    def process_by_dim(self, dim: int = None) -> str:
+    #     processes = []
 
-        processes = []
-
-        to_process = {dim: self.by_dim[dim]} if (
-            dim and dim in self.by_dim
-            ) else self.by_dim
+    #     to_process = {dim: self.by_dim[dim]} if (
+    #         dim and dim in self.by_dim
+    #         ) else self.by_dim
         
-        for dim, group in to_process.items():
+    #     for dim, group in to_process.items():
 
-            print(f"Processing {dim}:{group.name}.")
+    #         print(f"Processing {dim}:{group.name}.")
             
-            # If group is to be merged:
-            if group.action == 'merge':
-                processing = list(group.datasets)  # Open all datasets in group.
-                for ds in processing:
-                    # Assign any required attributes to variables
-                    '''
-                    Assume these are only correct for last time-point in series.
-                    '''
+    #         # If group is to be merged:
+    #         if group.action == 'merge':
+    #             processing = list(group.datasets)  # Open all datasets in group.
+    #             for ds in processing:
+    #                 # Assign any required attributes to variables
+    #                 '''
+    #                 Assume these are only correct for last time-point in series.
+    #                 '''
 
-                    # Assign any 'one per group' global attributes to temporary 
-                    # variables, if larger in current file than current values.
+    #                 # Assign any 'one per group' global attributes to temporary 
+    #                 # variables, if larger in current file than current values.
 
-                # Merge all datasets in group along time variable, & assign 
-                # resulting dataset to new group attribute. Use chunking if 
-                # large.
+    #             # Merge all datasets in group along time variable, & assign 
+    #             # resulting dataset to new group attribute. Use chunking if 
+    #             # large.
 
-                # Close individual datasets, keeping only resultant.
+    #             # Close individual datasets, keeping only resultant.
 
-                # Apply 'once per group' attributes back to resulting dataset.
+    #             # Apply 'once per group' attributes back to resulting dataset.
 
-                # Derive title/filename from group's stem & dimension
+    #             # Derive title/filename from group's stem & dimension
                 
-                # Call CF compliance function on dataset. 
+    #             # Call CF compliance function on dataset. 
                 
-                # Set filepath and save as self.processed
+    #             # Set filepath and save as self.processed
 
-                # Set encoding
+    #             # Set encoding
 
-                # Save dataset to NetCDF
+    #             # Save dataset to NetCDF
 
-                # Close dataset
+    #             # Close dataset
 
-                pass
+    #             pass
 
-            # If not merging:
-            else:
-                # Derive base title/filename from group's stem & dimension
-                title = group.stem + group.name if group.name not in group.stem else group.stem
+    #         # If not merging:
+    #         else:
+    #             # Derive base title/filename from group's stem & dimension
+    #             title = group.stem + group.name if group.name not in group.stem else group.stem
                 
-                writers = []
+    #             writers = []
                 
-                if group.action == 'split':
-                    # For each filepath in group, process in a separate Process
-                    processes += [Process(
-                        target=process_large, 
-                        kwargs={'filepath':path, 
-                                'dim':dim,
-                                'title':title, 
-                                'time_var':group.time_var, 
-                                'target_dir':self.target_dir}
-                        ) for path in group.filepaths[1:]]
-                    [p.start() for p in processes[-2:]]  # TODO: this needs to know how many time points are in the file.
+    #             if group.action == 'split':
+    #                 # For each filepath in group, process in a separate Process
+    #                 processes += [Process(
+    #                     target=process_large, 
+    #                     kwargs={'filepath':path, 
+    #                             'dim':dim,
+    #                             'title':title, 
+    #                             'time_var':group.time_var, 
+    #                             'target_dir':self.target_dir}
+    #                     ) for path in group.filepaths[1:]]
+    #                 [p.start() for p in processes[-2:]]  # TODO: this needs to know how many time points are in the file.
 
-                    # Continue on local process
-                    process_large(
-                        filepath=group.filepaths[0],
-                        dim=dim,
-                        title=title,
-                        time_var=group.time_var,
-                        target_dir=self.target_dir
-                    )
-                else:
-                    # For each filepath in group:
-                    for i, path in enumerate(group.filepaths[:4]):
-                        # Open as dataset
-                        with xr.open_dataset(path, 
-                                            decode_times=False, 
-                                            chunks={'z': 11, 'zn':11}) as ds:
+    #                 # Continue on local process
+    #                 process_large(
+    #                     filepath=group.filepaths[0],
+    #                     dim=dim,
+    #                     title=title,
+    #                     time_var=group.time_var,
+    #                     target_dir=self.target_dir
+    #                 )
+    #             else:
+    #                 # For each filepath in group:
+    #                 for i, path in enumerate(group.filepaths[:4]):
+    #                     # Open as dataset
+    #                     with xr.open_dataset(path, 
+    #                                         decode_times=False, 
+    #                                         chunks={'z': 11, 'zn':11}) as ds:
 
-                            # Update dataset's title
-                            ds.attrs['title'] = title
+    #                         # Update dataset's title
+    #                         ds.attrs['title'] = title
                         
-                            # apply chunking if large (e.g. ds.nbytes >= 1e9).
+    #                         # apply chunking if large (e.g. ds.nbytes >= 1e9).
 
-                            #Call CF compliance function
+    #                         #Call CF compliance function
                             
-                            if group.action == 'split':
-                                # Split dataset by time-point, yielding multiple 
-                                # new datasets.
-                                group.processed = split_ds(dataset=ds,
-                                                        var=group.time_var)
-                                # group.processed only ever needs to hold latest
-                                # collection of datasets.
+    #                         if group.action == 'split':
+    #                             # Split dataset by time-point, yielding multiple 
+    #                             # new datasets.
+    #                             group.processed = split_ds(dataset=ds,
+    #                                                     var=group.time_var)
+    #                             # group.processed only ever needs to hold latest
+    #                             # collection of datasets.
 
-                                ds.close()
-                            else:
-                                # Copy dataset as-is into self.processed
-                                group.processed = [ds]  # This should be wrapped in a DsGroup function
+    #                             ds.close()
+    #                         else:
+    #                             # Copy dataset as-is into self.processed
+    #                             group.processed = [ds]  # This should be wrapped in a DsGroup function
 
-                            # For each new dataset:
-                            for new_ds in group.processed:
-                                # Derive new title
+    #                         # For each new dataset:
+    #                         for new_ds in group.processed:
+    #                             # Derive new title
 
-                                # Update required global attributes (MONC time, title, 
-                                # MONC timestep, (previous diagnostic write at?)).
+    #                             # Update required global attributes (MONC time, title, 
+    #                             # MONC timestep, (previous diagnostic write at?)).
 
-                                # set filepath
-                                filepath = op.join(
-                                    self.target_dir, f"{new_ds.attrs['title']}.nc"
-                                    )
-                                # set encodings
-                                encodings = {
-                                    k:{
-                                        'dtype': v.dtype,
-                                        '_FillValue': None
-                                    } for k, v in new_ds.variables.items()
-                                }
+    #                             # set filepath
+    #                             filepath = op.join(
+    #                                 self.target_dir, f"{new_ds.attrs['title']}.nc"
+    #                                 )
+    #                             # set encodings
+    #                             encodings = {
+    #                                 k:{
+    #                                     'dtype': v.dtype,
+    #                                     '_FillValue': None
+    #                                 } for k, v in new_ds.variables.items()
+    #                             }
 
-                                # Export to NetCDF (set as single-command function, 
-                                # so can wrap in performance_time).
-                                # TODO: Use compute=False option, then call 
-                                # compute() on resulting dask.delayed.Delayed 
-                                # object?
-                                if i<2:
-                                    # Test regular save function
-                                    print(f"Saving new dataset as {filepath}.")
-                                    ds_to_nc(ds=new_ds,
-                                            filepath=filepath,
-                                            encodings=encodings)
-                                else:
-                                    # Test dask version
-                                    print(f"Preparing delayed writers for {filepath}.")
-                                    writers.append(ds_to_nc_dask(ds=new_ds,
-                                            filepath=filepath,
-                                            encodings=encodings))
-                                # new_ds.to_netcdf(
-                                #     path=filepath, 
-                                #     encoding=encodings)
+    #                             # Export to NetCDF (set as single-command function, 
+    #                             # so can wrap in performance_time).
+    #                             # TODO: Use compute=False option, then call 
+    #                             # compute() on resulting dask.delayed.Delayed 
+    #                             # object?
+    #                             if i<2:
+    #                                 # Test regular save function
+    #                                 print(f"Saving new dataset as {filepath}.")
+    #                                 ds_to_nc(ds=new_ds,
+    #                                         filepath=filepath,
+    #                                         encodings=encodings)
+    #                             else:
+    #                                 # Test dask version
+    #                                 print(f"Preparing delayed writers for {filepath}.")
+    #                                 writers.append(ds_to_nc_dask(ds=new_ds,
+    #                                         filepath=filepath,
+    #                                         encodings=encodings))
+    #                             # new_ds.to_netcdf(
+    #                             #     path=filepath, 
+    #                             #     encoding=encodings)
 
-                                # Close new dataset: NEED TO CHECK 
-                                # dask.delayed.Delayed object doesn't need dataset 
-                                # to remain open until it completes.
-                                new_ds.close()
+    #                             # Close new dataset: NEED TO CHECK 
+    #                             # dask.delayed.Delayed object doesn't need dataset 
+    #                             # to remain open until it completes.
+    #                             new_ds.close()
 
-                                # Run CF checker on output file
+    #                             # Run CF checker on output file
 
-                            if i > 1:
-                                print(f"Computing last {len(group.processed)} writers.")
-                                [perform_write(writer) 
-                                for writer in writers[-len(group.processed):]
-                                ]
+    #                         if i > 1:
+    #                             print(f"Computing last {len(group.processed)} writers.")
+    #                             [perform_write(writer) 
+    #                             for writer in writers[-len(group.processed):]
+    #                             ]
                                 
-                            # If worked on single dataset, close it.
-                            if len(group.processed) == 1:
-                                group.processed[0].close()
+    #                         # If worked on single dataset, close it.
+    #                         if len(group.processed) == 1:
+    #                             group.processed[0].close()
 
-        [p.join() for p in processes]
-        return # Success/fail message with resulting filepath.
+    #     [p.join() for p in processes]
+    #     return # Success/fail message with resulting filepath.
+
+
+@performance_time
+def cf_merge(
+        group: DsGroup, 
+        dim: int, 
+        time_units: TimeUnits, 
+        target_dir: str
+    ) -> str:
+    '''
+    Should return name of saved file(s)
+    '''
+
+    print(f"Processing {dim}:{group.name}.")
+    
+    # If group is to be merged:
+    if group.action == 'merge':
+        processing = list(group.datasets)  # Open all datasets in group.
+        for ds in processing:
+            # Assign any required attributes to variables
+            '''
+            Assume these are only correct for last time-point in series.
+            '''
+
+            # Assign any 'one per group' global attributes to temporary 
+            # variables, if larger in current file than current values.
+
+        # Merge all datasets in group along time variable, & assign 
+        # resulting dataset to new group attribute. Use chunking if 
+        # large.
+
+        # Close individual datasets, keeping only resultant.
+
+        # Apply 'once per group' attributes back to resulting dataset.
+
+        # Derive title/filename from group's stem & dimension
+        
+        # Call CF compliance function on dataset. 
+        
+        # Set filepath and save as self.processed
+
+        # Set encoding
+
+        # Save dataset to NetCDF
+
+        # Close dataset
+
+        pass
+
+    # If not merging:
+    else:
+        # Derive base title/filename from group's stem & dimension
+        title = group.stem + group.name if group.name not in group.stem else group.stem
+        
+        writers = []
+        
+        if group.action == 'split':
+            # For each filepath in group, process in a separate Process
+            processes += [Process(
+                target=process_large, 
+                kwargs={'filepath':path, 
+                        'dim':dim,
+                        'title':title, 
+                        'time_var':group.time_var, 
+                        'target_dir':self.target_dir}
+                ) for path in group.filepaths[1:]]
+            [p.start() for p in processes[-2:]]  # TODO: this needs to know how many time points are in the file.
+
+            # Continue on local process
+            process_large(
+                filepath=group.filepaths[0],
+                dim=dim,
+                title=title,
+                time_var=group.time_var,
+                target_dir=self.target_dir
+            )
+        else:
+            # For each filepath in group:
+            for i, path in enumerate(group.filepaths[:4]):
+                # Open as dataset
+                with xr.open_dataset(path, 
+                                    decode_times=False, 
+                                    chunks={'z': 11, 'zn':11}) as ds:
+
+                    # Update dataset's title
+                    ds.attrs['title'] = title
+                
+                    # apply chunking if large (e.g. ds.nbytes >= 1e9).
+
+                    #Call CF compliance function
+                    
+                    if group.action == 'split':
+                        # Split dataset by time-point, yielding multiple 
+                        # new datasets.
+                        group.processed = split_ds(dataset=ds,
+                                                var=group.time_var)
+                        # group.processed only ever needs to hold latest
+                        # collection of datasets.
+
+                        ds.close()
+                    else:
+                        # Copy dataset as-is into self.processed
+                        group.processed = [ds]  # This should be wrapped in a DsGroup function
+
+                    # For each new dataset:
+                    for new_ds in group.processed:
+                        # Derive new title
+
+                        # Update required global attributes (MONC time, title, 
+                        # MONC timestep, (previous diagnostic write at?)).
+
+                        # set filepath
+                        filepath = op.join(
+                            self.target_dir, f"{new_ds.attrs['title']}.nc"
+                            )
+                        # set encodings
+                        encodings = {
+                            k:{
+                                'dtype': v.dtype,
+                                '_FillValue': None
+                            } for k, v in new_ds.variables.items()
+                        }
+
+                        # Export to NetCDF (set as single-command function, 
+                        # so can wrap in performance_time).
+                        # TODO: Use compute=False option, then call 
+                        # compute() on resulting dask.delayed.Delayed 
+                        # object?
+                        if i<2:
+                            # Test regular save function
+                            print(f"Saving new dataset as {filepath}.")
+                            ds_to_nc(ds=new_ds,
+                                    filepath=filepath,
+                                    encodings=encodings)
+                        else:
+                            # Test dask version
+                            print(f"Preparing delayed writers for {filepath}.")
+                            writers.append(ds_to_nc_dask(ds=new_ds,
+                                    filepath=filepath,
+                                    encodings=encodings))
+                        # new_ds.to_netcdf(
+                        #     path=filepath, 
+                        #     encoding=encodings)
+
+                        # Close new dataset: NEED TO CHECK 
+                        # dask.delayed.Delayed object doesn't need dataset 
+                        # to remain open until it completes.
+                        new_ds.close()
+
+                        # Run CF checker on output file
+
+                    if i > 1:
+                        print(f"Computing last {len(group.processed)} writers.")
+                        [perform_write(writer) 
+                        for writer in writers[-len(group.processed):]
+                        ]
+                        
+                    # If worked on single dataset, close it.
+                    if len(group.processed) == 1:
+                        group.processed[0].close()
+
+    [p.join() for p in processes]
+    return # Success/fail message with resulting filepath.
 
 
 def process_large(
@@ -594,6 +705,10 @@ def process_large(
         target_dir: str, 
         split: bool
     ) -> str:
+    '''
+    Should return name of saved file(s)
+    '''
+
     print(op.basename(filepath), "- process_large - process id:", os.getpid())
     
     with xr.open_dataset(filepath, 
@@ -672,23 +787,24 @@ def process_large(
     pass
 
 
-def multiprocess(parser: DirectoryParser, n_proc: int = None):
-    if not n_proc or n_proc > os.cpu_count() - 1:
-        n_proc = os.cpu_count() - 1  # Keep one aside as controller
-    
-    to_process = parser.by_dim  # dimension-specific groups to be processed
-    results = []  # set up empty array for results from process pool
+def multiprocess(groups: dict, target_dir: str, n_proc: int, time_units: TimeUnits = None):
+    '''
+    groups:     dimension-specific groups to be processed.
+    target_dir: directory in which to write processed NC files.
+    n_proc:     number of processes to use, in addition to controller.
+    time_units: CF-compliant unit to use for time coordinate.
+    '''
+    results = {dim: [] for dim in groups.keys()}  # set up empty dict for results from process pool
 
     # Set up process pool
     with Pool(processes=n_proc) as pool:
         
         # Allocate datasets to be processed in increasing order of dimensions
         # Work with 0-2d files first, because 3d processing depends on 0d/1d.
-        for dim in list(to_process.keys()).sort():
-            group = to_process[dim]
+        for dim in list(groups.keys()).sort():
+            group = groups[dim]
             print(f"Processing {dim}:{group.name}.")
-            group = to_process[dim]
-
+            
             if group.action == 'split':
                 
                 # Derive base title/filename from group's stem & dimension
@@ -701,11 +817,16 @@ def multiprocess(parser: DirectoryParser, n_proc: int = None):
                 files_per_process = int(len(group.filepaths) / (n_proc + 1))
                 files0 = len(group.filepaths) - n_proc * files_per_process
 
+                # Wait for 0+1d processing to finish, so reference variables
+                # are available for perturbations.
+                for d in reference_vars.values():
+                    groups[d].processed = results[d].get()  # 
+                
                 # For each filepath in group, process in a separate Process
 
                 # Allocate all but first subset to worker processes
                 for filepath in group.filepaths[files0:]:
-                    results.append(
+                    results[dim].append(
                         pool.apply_async(
                             func=process_large, 
                             kwds={
@@ -713,8 +834,8 @@ def multiprocess(parser: DirectoryParser, n_proc: int = None):
                                 'dim':dim,
                                 'title':title, 
                                 'time_var':group.time_var, 
-                                'time_units':parser.time_units,
-                                'target_dir':parser.target_dir,
+                                'time_units':time_units,
+                                'target_dir':target_dir,
                                 'split':group.action == 'split'
                                 }
                             )
@@ -727,14 +848,20 @@ def multiprocess(parser: DirectoryParser, n_proc: int = None):
                         dim=dim,
                         title=title,
                         time_var=group.time_var,
-                        time_units=parser.time_units,
-                        target_dir=parser.target_dir
+                        time_units=time_units,
+                        target_dir=target_dir,
+                        split=group.action == 'split'
                     )
             # If group is to be merged:
             elif group.action == 'merge':
-                results.append(
-                    pool.apply_async(func=parser.process_by_dim, args=dim)
-                    )
+                results[dim].append(
+                    pool.apply_async(
+                    func=cf_merge,
+                    kwds={
+                        'group': group,
+                        'dim': dim
+                    })
+                )
         
             else:
                 # Process for CF compliance, but leave dataset as a single,
@@ -749,30 +876,151 @@ def multiprocess(parser: DirectoryParser, n_proc: int = None):
         
 
 @performance_time
+def sort_nc(directory) -> [dict, list]:
+    '''
+    Sorts into MONC output files and other NC files, the latter listed as
+    possible input files.
+
+    It also categorizes the MONC outputs according to their number of 
+    dimensions.
+
+    It would be best if all files of a given run were in one directory, 
+    rather than split between 0-2d and 3d.
+    '''
+    print('Categorising fields by dimension')
+
+    by_dim = {n_dim: DsGroup(
+        name=group, n_dims=n_dim, action=DIM_ACTIONS[group]
+    ) for n_dim, group in DIM_GROUPS.items()}
+
+    input_files = []
+
+    # For each NC file in source directory (recursive parsing or not?):
+    for filepath in iglob(f'{op.join(directory, "*.nc")}', 
+                          root_dir=os.pathsep, 
+                          recursive=False):
+        with xr.open_dataset(filepath, 
+                             decode_times=False) as ds:  
+                            # concat_characters=False
+            # Using concat_characters=False preserves the string dimension 
+            # of the options_database variable. However, it makes dealing
+            # with the binary -> string conversion painful and messy.
+
+            # Categorise MONC output / other
+            if is_monc(ds):
+                # Find number of (non-options-database) dimensions.
+                n_dims = get_n_dims(ds) - 1  # Subtract 1 for time.
+                # Add filepath to relevant dimension group.
+                by_dim[n_dims].add(filepath=filepath)
+                # print(f"{op.basename(filepath)}: {n_dims} spatial dimensions.")
+            else:
+                # Categorise as potential input file
+                input_files.append(filepath)
+                # print(f"{op.basename}: possible input file.")
+    
+    return [by_dim, input_files]
+
+
+@performance_time
+def time_units_from_input(filepaths: list) -> TimeUnits:
+    '''
+    Attempt to find time unit data in possible input file(s).
+    Refers to FROM_INPUT_FILE['reftime'] from setup.py, for variable name
+    under which time units are expected.
+    '''
+
+    input_data = {}
+    for f in filepaths:
+        with xr.open_dataset(f, decode_times=False) as ds:  
+            # , concat_characters=False
+            try:
+                input_data[f] = ds[FROM_INPUT_FILE['reftime']].attrs
+            except KeyError:
+                # Variable not found in prospective input file; move on to
+                # next input file, if any.
+                continue
+    if len(input_data) != 1:
+        # Request user input for tie-breaking.
+        if len(input_data) > 1:
+            print('Multiple time units found:')
+            for i, u in enumerate(input_data.values()):
+                print(f'[{i}] {u}')
+            while True:
+                user_input = input('Please select number or enter units for time, including reference date in ISO format.')
+                if user_input.isnumeric():
+                    try:
+                        input_data = list(input_data.values())[int(user_input)]
+                    except:
+                        print('Invalid number; try again.')
+                        continue
+                    else:
+                        break
+                else:
+                    input_data = {'units': user_input}
+        else:
+            input_data = {
+                'units': 
+                input('Enter units for time, including reference date in ISO format:')
+            }
+    else:
+        input_data = list(input_data.values())[0]
+    while True:
+        try:
+            time_units = TimeUnits(
+                units=input_data['units'], 
+                calendar=input_data['calendar'] if 'calendar' in input_data else DEFAULT_CALENDAR
+            )
+        except ValueError or KeyError as e:
+            input_data['units'] = input(e + 'Enter units for time, including reference date in ISO format:')
+            continue
+        else:
+            return time_units
+            
+            
+@performance_time
 def main():
 
     print("Main app process id:", os.getpid())
     
     # TODO: Validate supplied arguments/directory
+    # if source directory not in args, source_dir = os.getcwd()
 
     # TODO: Set directory to parse & target directory.
     # source = '/gws/nopw/j04/eurec4auk/monc_prelim_output/jan_28_3d'
     # target = '/gws/nopw/j04/eurec4auk/cfizer_testing/jan_28_3d'  # op.join(op.dirname(op.dirname(os.getcwd())), 'testing')
-    source = os.path.join(os.path.dirname(app_dir), 'test_data')
-    target = None
-    try:
-        print("Creating directory parser, to process", source)
-        print("Putting processed files in", target)
-        parser = DirectoryParser(directory=source,
-                                 target=target)
-    except OSError as e:
-        print(e)
-        exit(1)
-    except Exception as e:  # Catch anything not anticipated
-        print(e)
-        exit(1)
+    source_dir = os.path.join(os.path.dirname(app_dir), 'test_data')
+    target_dir = None
+
+    if source_dir and not op.exists(source_dir):
+            raise OSError(f'Directory {source_dir} not found.')
+    # if target directory not in args, 
+    target_dir = op.join(
+        op.dirname(source_dir), f'{op.basename(source_dir)}+processed'
+    )
+    # If target directory doesn't exist, create it.
+    if not op.exists(target_dir):
+        print(f'{target_dir} does not yet exist: making...')
+        try:
+            os.makedirs(target_dir)
+        except OSError as e:
+            raise e
+    
+    # Parse directory & categorise NC files by type and dimensions
+    [by_dim, input_files] = sort_nc(source_dir)
+    
+    # ID time variable of each group from VOCAB.
+    
+    # Attempt to derive time unit info.
+    # Assume time units will be common to all.
+    time_units = time_units_from_input(input_files) if input_files else None
             
     # For each dimension group:
+    # If n_proc in args, use process pool; otherwise process sequentially.
+    if not n_proc or n_proc > os.cpu_count() - 1:
+        n_proc = os.cpu_count() - 1  # Keep one aside as controller
+    
+    multiprocess(groups=by_dim, time_units=time_units, n_proc=n_proc)
+
     # parser.process_by_dim()
     parser.process_by_dim(dim=3)  # Test split+save components alone.
 
