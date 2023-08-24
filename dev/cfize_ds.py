@@ -1,5 +1,8 @@
 import xarray as xr
 from algorithm import TimeUnits
+from time import sleep
+import os.path as op
+from setup import *
 
 
 def cfize_dataset(dataset: xr.Dataset,
@@ -114,8 +117,12 @@ def cfize_variables(dataset: xr.Dataset, *args: str) -> xr.Dataset:
         # Convert any perturbation variables to absolute values.
 
             # Look up reference variable's dimension
+            ref_group = DIM_GROUPS[reference_vars[var]]
 
             # Open dataset of corresponding group
+            while not op.exists(ref_ds_path):
+                   sleep(1)
+            
             '''
             This assumes required variable is in a merged dataset. Will need 
             more rigorous mapping if this cannot be assumed.

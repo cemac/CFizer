@@ -46,6 +46,8 @@ FROM_INPUT_FILE = {
     'reftime': 'time'
 }
 
+CHUNKING_DIMS = {'z': 16, 'zn':16}
+
 DEFAULT_CALENDAR = 'proleptic_gregorian'  # As per ISO 8601:2004.
 
 DEPHY_OPTIONS = ('dephy_file',)  # 'dephy_forcings_enabled'

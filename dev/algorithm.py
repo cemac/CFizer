@@ -15,7 +15,8 @@ from difflib import SequenceMatcher
 from dask.delayed import Delayed
 from dask.diagnostics import ProgressBar
 from time import perf_counter
-from multiprocessing import Process  # multiprocess not available in Jaspy environment.
+from cfize_ds import cfize_dataset
+from multiprocessing import Process, Pool  # multiprocess not available in Jaspy environment.
 
 
 def performance_time(func):
@@ -27,70 +28,6 @@ def performance_time(func):
 		print(f"{func} on process {os.getpid()} took {duration} seconds.")  # ({args}, {kwargs})
 		return response
 	return wrapper
-
-
-def process_3d(filepath, title, time_var, target_dir):
-    print(op.basename(filepath), "- process_3d - process id:", os.getpid())
-    with xr.open_dataset(filepath, 
-                         decode_times=False,
-                         chunks={'z': 11, 'zn': 11}
-                         ) as ds:
-        # Update dataset's title
-        ds.attrs['title'] = title
-    
-        # apply chunking if large (e.g. ds.nbytes >= 1e9).
-
-        #Call CF compliance function
-        
-        # Split dataset by time-point, yielding multiple 
-        # new datasets.
-        processed = split_ds(dataset=ds, 
-                             var=time_var)
-        # processed only ever needs to hold latest collection of datasets.
-
-    writers = []
-    # For each new dataset:
-    for ds in processed:
-        # Derive new title
-
-        # Update required global attributes (MONC time, title, 
-        # MONC timestep, (previous diagnostic write at?)).
-
-        # set filepath
-        filepath = op.join(
-            target_dir, f"{ds.attrs['title']}.nc"
-            )
-        # set encodings
-        encodings = {
-            k:{
-                'dtype': v.dtype,
-                '_FillValue': None
-            } for k, v in ds.variables.items()
-        }
-
-        # Export to NetCDF (set as single-command function, 
-        # so can wrap in performance_time).
-        # TODO: Use compute=False option, then call 
-        # compute() on resulting dask.delayed.Delayed 
-        # object?
-        # if i == 0:
-        #     # Test regular save function
-        #     print(f"Saving new dataset as {filepath}.")
-        #     ds_to_nc(ds=ds,
-        #             filepath=filepath,
-        #             encodings=encodings)
-        # else:
-        # Test dask version
-        print(f"Preparing delayed writer for {filepath}.")
-        writers.append(ds_to_nc_dask(ds=ds,
-                                filepath=filepath,
-                                encodings=encodings
-                                ))
-        ds.close()
-    print(f"Computing writes.")
-    [perform_write(writer) for writer in writers]
-    
-    # Run CF checker on output files
 
 
 def stem_str(*args: str):
@@ -486,7 +423,7 @@ class DirectoryParser:
                 return time_units
 
     @performance_time
-    def process_by_dim(self, dim: int = None) -> None:
+    def process_by_dim(self, dim: int = None) -> str:
 
         processes = []
 
@@ -542,8 +479,9 @@ class DirectoryParser:
                 if group.action == 'split':
                     # For each filepath in group, process in a separate Process
                     processes += [Process(
-                        target=process_3d, 
+                        target=process_large, 
                         kwargs={'filepath':path, 
+                                'dim':dim,
                                 'title':title, 
                                 'time_var':group.time_var, 
                                 'target_dir':self.target_dir}
@@ -551,8 +489,9 @@ class DirectoryParser:
                     [p.start() for p in processes[-2:]]  # TODO: this needs to know how many time points are in the file.
 
                     # Continue on local process
-                    process_3d(
+                    process_large(
                         filepath=group.filepaths[0],
+                        dim=dim,
                         title=title,
                         time_var=group.time_var,
                         target_dir=self.target_dir
@@ -643,7 +582,171 @@ class DirectoryParser:
                                 group.processed[0].close()
 
         [p.join() for p in processes]
+        return # Success/fail message with resulting filepath.
 
+
+def process_large(
+        filepath: str, 
+        dim: int, 
+        title: str, 
+        time_var: str, 
+        time_units: TimeUnits, 
+        target_dir: str, 
+        split: bool
+    ) -> str:
+    print(op.basename(filepath), "- process_large - process id:", os.getpid())
+    
+    with xr.open_dataset(filepath, 
+                         decode_times=False
+                         ) as ds:
+        
+        # apply chunking if large (e.g. ds.nbytes >= 1e9).
+        # chunks=CHUNKING_DIMS
+        
+        # Update dataset's title
+        ds.attrs['title'] = title
+    
+        
+
+        #Call CF compliance function
+        ds = cfize_dataset(
+            dataset=ds,
+            dimension=dim,
+            title=title,
+            time_units=time_units
+        )
+            
+        
+        if split:
+            # Split dataset by time-point, yielding multiple 
+            # new datasets.
+            processed = split_ds(dataset=ds, 
+                                var=time_var)
+            # processed only ever needs to hold latest collection of datasets.
+        else:
+            processed = ds  # Will this persist after context of ds ends?
+
+    writers = []
+    # For each new dataset:
+    for ds in processed:
+        # Derive new title
+
+        # Update required global attributes (MONC time, title, 
+        # MONC timestep, (previous diagnostic write at?)).
+
+        # set filepath
+        filepath = op.join(
+            target_dir, f"{ds.attrs['title']}.nc"
+            )
+        # set encodings
+        encodings = {
+            k:{
+                'dtype': v.dtype,
+                '_FillValue': None
+            } for k, v in ds.variables.items()
+        }
+
+        # Export to NetCDF (set as single-command function, 
+        # so can wrap in performance_time).
+        # TODO: Use compute=False option, then call 
+        # compute() on resulting dask.delayed.Delayed 
+        # object?
+        # if i == 0:
+        #     # Test regular save function
+        #     print(f"Saving new dataset as {filepath}.")
+        #     ds_to_nc(ds=ds,
+        #             filepath=filepath,
+        #             encodings=encodings)
+        # else:
+        # Test dask version
+        print(f"Preparing delayed writer for {filepath}.")
+        writers.append(ds_to_nc_dask(ds=ds,
+                                filepath=filepath,
+                                encodings=encodings
+                                ))
+        ds.close()
+    print(f"Computing writes.")
+    [perform_write(writer) for writer in writers]
+    
+    # Run CF checker on output files
+    pass
+
+
+def multiprocess(parser: DirectoryParser, n_proc: int = None):
+    if not n_proc or n_proc > os.cpu_count() - 1:
+        n_proc = os.cpu_count() - 1  # Keep one aside as controller
+    
+    to_process = parser.by_dim  # dimension-specific groups to be processed
+    results = []  # set up empty array for results from process pool
+
+    # Set up process pool
+    with Pool(processes=n_proc) as pool:
+        
+        # Allocate datasets to be processed in increasing order of dimensions
+        # Work with 0-2d files first, because 3d processing depends on 0d/1d.
+        for dim in list(to_process.keys()).sort():
+            group = to_process[dim]
+            print(f"Processing {dim}:{group.name}.")
+            group = to_process[dim]
+
+            if group.action == 'split':
+                
+                # Derive base title/filename from group's stem & dimension
+                title = group.stem + group.name if group.name not in group.stem else group.stem
+                
+                writers = []
+
+                # How many files to split on each process?
+                # Allocate any overspill to controller.
+                files_per_process = int(len(group.filepaths) / (n_proc + 1))
+                files0 = len(group.filepaths) - n_proc * files_per_process
+
+                # For each filepath in group, process in a separate Process
+
+                # Allocate all but first subset to worker processes
+                for filepath in group.filepaths[files0:]:
+                    results.append(
+                        pool.apply_async(
+                            func=process_large, 
+                            kwds={
+                                'filepath':filepath, 
+                                'dim':dim,
+                                'title':title, 
+                                'time_var':group.time_var, 
+                                'time_units':parser.time_units,
+                                'target_dir':parser.target_dir,
+                                'split':group.action == 'split'
+                                }
+                            )
+                        )
+                
+                # Now work on remaining files on controller process
+                for filepath in  group.filepaths[:files0]:
+                    process_large(
+                        filepath=filepath,
+                        dim=dim,
+                        title=title,
+                        time_var=group.time_var,
+                        time_units=parser.time_units,
+                        target_dir=parser.target_dir
+                    )
+            # If group is to be merged:
+            elif group.action == 'merge':
+                results.append(
+                    pool.apply_async(func=parser.process_by_dim, args=dim)
+                    )
+        
+            else:
+                # Process for CF compliance, but leave dataset as a single,
+                # standalone file.
+                # Could still evaluate by size whether it's processed locally 
+                # or passed to the Pool.
+                pass
+
+        # Check all other processes are complete
+        for result in results:
+            print(result.get())  # assuming here that and DirectoryParser.process_by_dim and process_large each return values.
+        
 
 @performance_time
 def main():
