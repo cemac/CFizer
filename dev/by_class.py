@@ -748,7 +748,14 @@ class MoncDataset:
             else:
                 ref_var = self.ds[updates['reference_variable']]
             absolute = self.ds[variable] + ref_var
-            self.ds[variable] = absolute
+            self.ds[variable] = xr.DataArray(
+                data=absolute.data,
+                coords=self.ds[variable].coords,
+                dims=self.ds[variable].dims,
+                name=self.ds[variable].name,
+                attrs=self.ds[variable].attrs,
+                indexes=self.ds[variable].indexes
+            )
 
 
 class DsGroup:
