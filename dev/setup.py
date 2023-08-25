@@ -13,7 +13,7 @@ import yaml
 import os
 # from utils import vocab_from_xls
 
-WILDCARDS = {'*', '?'}
+# WILDCARDS = {'*', '?'}
 
 DIM_GROUPS = {
     0: '0+1d', 
@@ -49,7 +49,7 @@ FROM_INPUT_FILE = {
     'reftime': 'time'
 }
 
-CHUNKING_DIMS = {'z': 16, 'zn':16}
+CHUNKING_DIMS = {'z': 16, 'zn':16}  # Ideally chunk sizes should be power of 2.
 
 DEFAULT_CALENDAR = 'proleptic_gregorian'  # As per ISO 8601:2004.
 

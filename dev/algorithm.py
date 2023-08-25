@@ -32,6 +32,11 @@ def performance_time(func):
 
 
 def ds_feed(file_list: list|set|tuple|str):
+    '''
+    This generator replaces the DsGroup.datasets generator, because generators 
+    can't be passed (as a "pickle") to a new Process as an attribute, method or 
+    function within an object.
+    '''
     # ENHANCEMENT: test that all paths supplied are valid & are NC files.
     if isinstance(file_list, str):
         file_list = [file_list]
@@ -51,7 +56,6 @@ def variable_glob(ds: xr.Dataset, var_glob: str) -> list:
     '''
     match_str = re.compile(var_glob.replace('*', '.*').replace('?','.'))
     return [match_str.fullmatch(v).string for v in set(ds.variables) if match_str.fullmatch(v)]
-
 
 
 def stem_str(*args: str):
@@ -564,6 +568,42 @@ class TimeUnits(Units):
     #     return # Success/fail message with resulting filepath.
 
 
+def globals_to_vars(ds: xr.Dataset, 
+                    time_var: str, 
+                    last_time_point: int|float) -> xr.Dataset:
+    
+    vars = {}
+    for global_attr, var_attrs in CONFIG['global_to_variable'].items():
+
+        # Any advantage of name = global_attr.replace(' ', '_')?
+
+        if global_attr not in ds.attrs:
+            raise AttributeError
+        
+        if global_attr in do_not_propagate:
+            # assign `np.nan` to each data point except last, and then 
+            # set coords as per other case below.
+            data = type_from_str(ds.attrs[global_attr])
+            coords = [last_time_point]
+
+        else:
+            data = [type_from_str(ds.attrs[global_attr])]*len(ds[group.time_var].data)
+            coords = ds[group.time_var]
+
+        try:
+            vars[global_attr] = xr.DataArray(
+                name=global_attr,
+                data=data,
+                coords={time_var: coords},
+                dims=(time_var,),
+                attrs=var_attrs
+            )
+        except Exception as e:
+            raise e
+        
+    return vars
+
+
 def cf_merge(
         group: DsGroup, 
         time_units: TimeUnits, 
@@ -575,193 +615,65 @@ def cf_merge(
 
     from cfize_ds import cfize_dataset  # To avoid circular imports
     
-
     print(f"Processing {group.n_dims}:{group.name}.")
-    # return f"{target_dir}/filename.nc"
 
-    # If group is to be merged:
-    if group.action == 'merge':
-        processing = list(group.datasets())  # Open all datasets in group.
-        for ds in processing:
-            # Assign any required attributes to variables, 
-            # with associated attributes.
-            '''
-            Assume these are only correct for last time-point in series.
-            '''
-            time_var = variable_glob(ds=ds, var_glob=group.time_var)
-            if len(time_var) != 1:
-                # TODO: disambiguation or exception
-                pass
-            else:
-                time_var = time_var[0]
-            last_time_point = ds[time_var].data[-1]
-            for global_attr, var_attrs in CONFIG['global_to_variable'].items():
-
-                # Any advantage of name = global_attr.replace(' ', '_')?
-
-                if global_attr not in ds.attrs:
-                    raise AttributeError
-                
-                if global_attr in do_not_propagate:
-                    # assign `np.nan` to each data point except last, and then 
-                    # set coords as per other case below.
-                    data = type_from_str(ds.attrs[global_attr])
-                    coords = [last_time_point]
-
-                else:
-                    data = [type_from_str(ds.attrs[global_attr])]*len(ds[group.time_var].data)
-                    coords = ds[group.time_var]
-
-                try:
-                    globals[global_attr] = xr.DataArray(
-                        name=global_attr,
-                        data=data,
-                        coords={group.time_var: coords},
-                        dims=(group.time_var,),
-                        attrs=var_attrs
-                    )
-                except Exception as e:
-                    raise e
-
-            # Assign any 'one per group' global attributes to temporary 
-            # variables, if larger in current file than current values.
-
-        # Merge all datasets in group along time variable, & assign 
-        # resulting dataset to new group attribute. Use chunking if 
-        # large.
-
-        # Close individual datasets, keeping only resultant.
-
-        # Apply 'once per group' attributes back to resulting dataset.
-
-        # Derive title/filename from group's stem & dimension
-        
-        # Call CF compliance function on dataset. 
-        
-        # Set filepath and save as self.processed
-
-        # Set encoding
-
-        # Save dataset to NetCDF
-
-        # Close dataset
-
-        pass
-
-    # If not merging:
-    else:
-        # Derive base title/filename from group's stem & dimension
-        title = group.stem + group.name if group.name not in group.stem else group.stem
-        
-        writers = []
-        
-        if group.action == 'split':
-            # For each filepath in group, process in a separate Process
-            processes += [Process(
-                target=process_large, 
-                kwargs={'filepath':path, 
-                        'dim':dim,
-                        'title':title, 
-                        'time_var':group.time_var, 
-                        'target_dir':self.target_dir}
-                ) for path in group.filepaths[1:]]
-            [p.start() for p in processes[-2:]]  # TODO: this needs to know how many time points are in the file.
-
-            # Continue on local process
-            process_large(
-                filepath=group.filepaths[0],
-                dim=dim,
-                title=title,
-                time_var=group.time_var,
-                target_dir=self.target_dir
-            )
+    processing = list(group.datasets())  # Open all datasets in group.
+    for i, ds in enumerate(processing):
+        # Find dataset's time coordinate variable
+        time_var = variable_glob(ds=ds, var_glob=group.time_var)
+        if len(time_var) != 1:
+            # TODO: disambiguation
+            raise AttributeError(
+                'Multiple variables found in dataset that match time '
+                f'variable pattern, {group.time_var}.')
         else:
-            # For each filepath in group:
-            for i, path in enumerate(group.filepaths[:4]):
-                # Open as dataset
-                with xr.open_dataset(path, 
-                                    decode_times=False, 
-                                    chunks={'z': 11, 'zn':11}) as ds:
+            time_var = time_var[0]
 
-                    # Update dataset's title
-                    ds.attrs['title'] = title
-                
-                    # apply chunking if large (e.g. ds.nbytes >= 1e9).
+        # Assign any required global attributes to variables, 
+        # with associated attributes. Remove global attribute.
+        '''
+        Assume these are only correct for last time-point in series.
+        '''
+        
+        last_time_point = ds[time_var].data[-1]
+        try:
+            new_vars = globals_to_vars(
+                        ds=ds, 
+                        time_var=time_var, 
+                        last_time_point=last_time_point
+            )
+        except Exception as e:
+            raise e
+        for name, array in new_vars.items():
+            ds.attrs.pop(name)
+            processing[i] = ds.assign({name: array})  # Need to assign to original dataset in list rather than placeholder ds.
+            
+        # Assign any 'one per group' global attributes to temporary 
+        # variables, if larger in current file than current values.
+        
 
-                    #Call CF compliance function
-                    
-                    if group.action == 'split':
-                        # Split dataset by time-point, yielding multiple 
-                        # new datasets.
-                        group.processed = split_ds(dataset=ds,
-                                                var=group.time_var)
-                        # group.processed only ever needs to hold latest
-                        # collection of datasets.
+    # Merge all datasets in group along time variable, & assign 
+    # resulting dataset to new group attribute. Use chunking if 
+    # large.
 
-                        ds.close()
-                    else:
-                        # Copy dataset as-is into self.processed
-                        group.processed = [ds]  # This should be wrapped in a DsGroup function
+    # Close individual datasets, keeping only resultant.
 
-                    # For each new dataset:
-                    for new_ds in group.processed:
-                        # Derive new title
+    # Apply 'once per group' attributes back to resulting dataset.
 
-                        # Update required global attributes (MONC time, title, 
-                        # MONC timestep, (previous diagnostic write at?)).
+    # Derive title/filename from group's stem & dimension
+    
+    # Call CF compliance function on dataset. 
+    
+    # Set filepath and save as processed
+    processed = f"{target_dir}/filename.nc"
 
-                        # set filepath
-                        filepath = op.join(
-                            self.target_dir, f"{new_ds.attrs['title']}.nc"
-                            )
-                        # set encodings
-                        encodings = {
-                            k:{
-                                'dtype': v.dtype,
-                                '_FillValue': None
-                            } for k, v in new_ds.variables.items()
-                        }
+    # Set encoding
 
-                        # Export to NetCDF (set as single-command function, 
-                        # so can wrap in performance_time).
-                        # TODO: Use compute=False option, then call 
-                        # compute() on resulting dask.delayed.Delayed 
-                        # object?
-                        if i<2:
-                            # Test regular save function
-                            print(f"Saving new dataset as {filepath}.")
-                            ds_to_nc(ds=new_ds,
-                                    filepath=filepath,
-                                    encodings=encodings)
-                        else:
-                            # Test dask version
-                            print(f"Preparing delayed writers for {filepath}.")
-                            writers.append(ds_to_nc_dask(ds=new_ds,
-                                    filepath=filepath,
-                                    encodings=encodings))
-                        # new_ds.to_netcdf(
-                        #     path=filepath, 
-                        #     encoding=encodings)
+    # Save dataset to NetCDF
 
-                        # Close new dataset: NEED TO CHECK 
-                        # dask.delayed.Delayed object doesn't need dataset 
-                        # to remain open until it completes.
-                        new_ds.close()
+    # Close dataset
 
-                        # Run CF checker on output file
-
-                    if i > 1:
-                        print(f"Computing last {len(group.processed)} writers.")
-                        [perform_write(writer) 
-                        for writer in writers[-len(group.processed):]
-                        ]
-                        
-                    # If worked on single dataset, close it.
-                    if len(group.processed) == 1:
-                        group.processed[0].close()
-
-    [p.join() for p in processes]
-    return # Success/fail message with resulting filepath.
+    return processed
 
 
 def process_large(
