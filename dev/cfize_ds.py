@@ -3,6 +3,7 @@ from algorithm import TimeUnits
 from time import sleep
 import os.path as op
 from setup import *
+from utils import format_units
 
 
 def cfize_dataset(dataset: xr.Dataset,
@@ -57,8 +58,12 @@ def missing_coords(dataset: xr.Dataset, dim: str = None) -> xr.Dataset:
 
 
 def cfize_variables(dataset: xr.Dataset, *args: str) -> xr.Dataset:
-        
+    pass
     # For each variable in args:
+
+        # If variable not in dataset, as is, look for wildcards or use it as a 
+        # stem. E.g. time_series* should identify time_series_300_1800 as a
+        # match.
     
         # Find variable's updates in VOCAB[dim][variable].
 
@@ -98,7 +103,12 @@ def cfize_variables(dataset: xr.Dataset, *args: str) -> xr.Dataset:
             # If any new unit equivalent but not equal to any existing, run 
             # conversion.
 
-            # Apply new units if present.
+            # Apply new units if present, or update format of existing.
+            # Don't use cfunits.Units.formatted() method, because its ordering
+            # is weird; instead, call a function that recognises '/' as 
+            # inverting any exponent (including implied 1), interprets '^' as
+            # exponent operator
+            # dataset[var].attrs['units'] = format_units(units)
 
         # If spatial coordinate variable, add/update any specified or implied 
         # axis.
@@ -109,39 +119,39 @@ def cfize_variables(dataset: xr.Dataset, *args: str) -> xr.Dataset:
 
         # Update variable name if specified.
             
-            '''
-            If updated variable is the time variable, need to pass back 
-            updated name, or probe for this change after return.
-            '''
+            # '''
+            # If updated variable is the time variable, need to pass back 
+            # updated name, or probe for this change after return.
+            # '''
         
         # Convert any perturbation variables to absolute values.
 
             # Look up reference variable's dimension
-            ref_group = DIM_GROUPS[reference_vars[var]]
+            # ref_group = DIM_GROUPS[reference_vars[var]]
 
-            # Open dataset of corresponding group
-            while not op.exists(ref_ds_path):
-                   sleep(1)
+            # # Open dataset of corresponding group
+            # while not ref_group.processed:  # op.exists(ref_ds_path):
+            #        sleep(1)
             
-            '''
-            This assumes required variable is in a merged dataset. Will need 
-            more rigorous mapping if this cannot be assumed.
-            '''
+            # '''
+            # This assumes required variable is in a merged dataset. Will need 
+            # more rigorous mapping if this cannot be assumed.
+            # '''
 
             # Pull out reference variable as DataArray.
 
             # Add reference DataArray to perturbation variable DataArray, & 
             # re-assign to variable as new array with existing attributes etc.
-            absolute = self.ds[variable] + ref_var
-            self.ds[variable] = xr.DataArray(
-                data=absolute.data,
-                coords=self.ds[variable].coords,
-                dims=self.ds[variable].dims,
-                name=self.ds[variable].name,
-                attrs=self.ds[variable].attrs,
-                indexes=self.ds[variable].indexes
-            )
+            # absolute = self.ds[variable] + ref_var
+            # self.ds[variable] = xr.DataArray(
+            #     data=absolute.data,
+            #     coords=self.ds[variable].coords,
+            #     dims=self.ds[variable].dims,
+            #     name=self.ds[variable].name,
+            #     attrs=self.ds[variable].attrs,
+            #     indexes=self.ds[variable].indexes
+            # )
 
     # Return updated dataset.
 
-    pass
+    

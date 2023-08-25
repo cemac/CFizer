@@ -13,6 +13,7 @@ import yaml
 import os
 # from utils import vocab_from_xls
 
+WILDCARDS = {'*', '?'}
 
 DIM_GROUPS = {
     0: '0+1d', 
@@ -26,6 +27,8 @@ DIM_ACTIONS = {
     '2d': 'merge', 
     '3d': 'split'
     }
+
+default_time_unit = 's'
 
 CF_ATTRIBUTES = {'title', 
                  'institution', 
@@ -53,17 +56,13 @@ DEFAULT_CALENDAR = 'proleptic_gregorian'  # As per ISO 8601:2004.
 DEPHY_OPTIONS = ('dephy_file',)  # 'dephy_forcings_enabled'
 DROP_FOR_DEPHY = ("longitude", "latitude", "z0")
 
-# # Categorise files, based on number of dimensions (in addition to time, 
-# # i.e. time only is 0d), & how they are to be processed.
-# # DIM_GROUPS = ['0+1d', '0+1d', '2d', '3d']
-# DIM_GROUPS = {0: {'action': 'merge',
-#                   'group': '0+1d'}, 
-#               1: {'action': 'merge',
-#                   'group': '0+1d'}, 
-#               2: {'action': 'merge',
-#                   'group': '2d'}, 
-#               3: {'action': 'split',
-#                   'group': '3d'}}
+do_not_propagate = {'MONC timestep'}
+
+split_attrs = {
+    'title',
+    'MONC time',
+    'Previous diagnostic write at'
+}
 
 '''
 Define required fields in vocabulary file/dictionary, as key: value pairs.
@@ -112,6 +111,7 @@ reference_vars = {}
 # the first character:
 if all([isinstance(k, str) for k in VOCABULARY.keys()]):
     VOCABULARY = {int(k[0]): v for k, v in VOCABULARY.items()}
+
 # Validate entries in vocabulary:
 for dim, group in VOCABULARY.items():
     for variable, attributes in group.items():
@@ -140,6 +140,7 @@ for dim, group in VOCABULARY.items():
                         f'setup: Variable {variable}: {k} requires either a '
                         'list or tuple.'
                     )
+            
         # Remove any invalid fields from variable.
         [attributes.pop(k) for k in to_drop]        
         

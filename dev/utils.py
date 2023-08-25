@@ -180,6 +180,32 @@ def stem_str(*args):
         return stem
     
 
+def format_units(units: Units|str) -> str:
+    '''
+    cfunits.Units.formatted() reorders component units weirdly.
+    This formatter preserves the original ordering, but makes units look more
+    CF-like.
+    It also preserves ratios in their original form, e.g. 'kg kg-1' instead of 
+    '1'.
+    '''
+
+    if isinstance(units, Units):
+        units = units.units
+
+    frac = units.split('/')
+    unit_list = [u.replace('^', '') for u in re.split('[ .]', frac[0])]
+    
+    if len(frac) > 1:
+        for denom in frac[1:]:
+            for u in re.split('[ .]', denom):
+                if '^' in u:
+                    unit_list.append('-'.join(u.split('^')))
+                else:
+                    unit_list.append(f'{u}-1')
+    
+    return ' '.join(unit_list)
+
+
 if __name__ == '__main__':
     # value = 315960.
     # units = 'seconds since 2020-01-25'
@@ -187,5 +213,8 @@ if __name__ == '__main__':
     # print('decode_time_units:', decoded_units)
     # print('timedelta_from_units:', timedelta_from_units(value, decoded_units[0]))
     # print('datetime_from_relative_units:', datetime_from_relative_units(value, units))
-    print(f'stem_str("spam", None): {stem_str("spam", None)}')
-
+    # print(f'stem_str("spam", None): {stem_str("spam", None)}')
+    print('kg/m^2 =', format_units('kg/m^2'))
+    print('kg/m^2/s =', format_units('kg/m^2/s'))
+    print('kg m/s^2 =', format_units('kg m/s^2'))
+    print('kg/kg =', format_units('kg/kg'))

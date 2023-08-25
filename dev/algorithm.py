@@ -11,11 +11,12 @@ import numpy as np
 from datetime import datetime
 import typing
 from difflib import SequenceMatcher
-# from utils import performance_time
+from utils import type_from_str
 from dask.delayed import Delayed
 from dask.diagnostics import ProgressBar
 from time import perf_counter, sleep
-from cfize_ds import cfize_dataset
+import argparse
+import re
 from multiprocessing import Process, Pool  # multiprocess not available in Jaspy environment.
 
 
@@ -28,6 +29,29 @@ def performance_time(func):
 		print(f"{func} on process {os.getpid()} took {duration} seconds.")  # ({args}, {kwargs})
 		return response
 	return wrapper
+
+
+def ds_feed(file_list: list|set|tuple|str):
+    # ENHANCEMENT: test that all paths supplied are valid & are NC files.
+    if isinstance(file_list, str):
+        file_list = [file_list]
+    return (xr.open_dataset(path, decode_times=False) for path in file_list)
+    
+
+def ds_list(file_list: list|set|tuple|str):
+    # ENHANCEMENT: test that all paths supplied are valid & are NC files.
+    if isinstance(file_list, str):
+        file_list = [file_list]
+    return [xr.open_dataset(path, decode_times=False) for path in file_list]
+
+
+def variable_glob(ds: xr.Dataset, var_glob: str) -> list:
+    '''
+    Takes a glob-style string and finds matching variable(s) in a dataset.
+    '''
+    match_str = re.compile(var_glob.replace('*', '.*').replace('?','.'))
+    return [match_str.fullmatch(v).string for v in set(ds.variables) if match_str.fullmatch(v)]
+
 
 
 def stem_str(*args: str):
@@ -54,6 +78,9 @@ def stem_str(*args: str):
 
 
 def get_time_var(*args: int|xr.Dataset) -> str:
+    '''
+    TODO: update to use VOCABULARY[dim]
+    '''
     if isinstance(args[0], int):
         if args[0] not in VOCABULARY:
             raise KeyError(
@@ -193,7 +220,7 @@ class DsGroup:
             # Cannot set default valueas an empty list in arguments, or it 
             # assigns SAME empty list to every instance.
 
-            self.processed = []
+            self.processed = None  # Filepath(s) of output
             self.stem = stem_str(*self.filepaths) if self.filepaths else None
 
             # Although it would be best to verify that all member datasets have 
@@ -215,10 +242,14 @@ class DsGroup:
                                             # added.
             # self.datasets is a generator, so any changes made to a member
             # object must be saved elsewhere, e.g. self.processed or NC file.
-            self.datasets = (xr.open_dataset(
-                path, decode_times=False
-                ) for path in self.filepaths)
+            # self.datasets = ds_feed(self.filepaths)
+                # (xr.open_dataset(
+                # path, decode_times=False
+                # ) for path in self.filepaths)
 
+    def datasets(self):
+        return ds_feed(self.filepaths)
+    
     def add(self, filepath: str = '') -> None:
         
         if not op.exists(filepath):
@@ -385,7 +416,7 @@ class TimeUnits(Units):
             
     #         # If group is to be merged:
     #         if group.action == 'merge':
-    #             processing = list(group.datasets)  # Open all datasets in group.
+    #             processing = list(group.datasets())  # Open all datasets in group.
     #             for ds in processing:
     #                 # Assign any required attributes to variables
     #                 '''
@@ -533,27 +564,64 @@ class TimeUnits(Units):
     #     return # Success/fail message with resulting filepath.
 
 
-@performance_time
 def cf_merge(
         group: DsGroup, 
-        dim: int, 
         time_units: TimeUnits, 
         target_dir: str
     ) -> str:
     '''
-    Should return name of saved file(s)
+    Should print & return name of saved file(s)
     '''
 
-    print(f"Processing {dim}:{group.name}.")
+    from cfize_ds import cfize_dataset  # To avoid circular imports
     
+
+    print(f"Processing {group.n_dims}:{group.name}.")
+    # return f"{target_dir}/filename.nc"
+
     # If group is to be merged:
     if group.action == 'merge':
-        processing = list(group.datasets)  # Open all datasets in group.
+        processing = list(group.datasets())  # Open all datasets in group.
         for ds in processing:
-            # Assign any required attributes to variables
+            # Assign any required attributes to variables, 
+            # with associated attributes.
             '''
             Assume these are only correct for last time-point in series.
             '''
+            time_var = variable_glob(ds=ds, var_glob=group.time_var)
+            if len(time_var) != 1:
+                # TODO: disambiguation or exception
+                pass
+            else:
+                time_var = time_var[0]
+            last_time_point = ds[time_var].data[-1]
+            for global_attr, var_attrs in CONFIG['global_to_variable'].items():
+
+                # Any advantage of name = global_attr.replace(' ', '_')?
+
+                if global_attr not in ds.attrs:
+                    raise AttributeError
+                
+                if global_attr in do_not_propagate:
+                    # assign `np.nan` to each data point except last, and then 
+                    # set coords as per other case below.
+                    data = type_from_str(ds.attrs[global_attr])
+                    coords = [last_time_point]
+
+                else:
+                    data = [type_from_str(ds.attrs[global_attr])]*len(ds[group.time_var].data)
+                    coords = ds[group.time_var]
+
+                try:
+                    globals[global_attr] = xr.DataArray(
+                        name=global_attr,
+                        data=data,
+                        coords={group.time_var: coords},
+                        dims=(group.time_var,),
+                        attrs=var_attrs
+                    )
+                except Exception as e:
+                    raise e
 
             # Assign any 'one per group' global attributes to temporary 
             # variables, if larger in current file than current values.
@@ -709,6 +777,8 @@ def process_large(
     Should return name of saved file(s)
     '''
 
+    from cfize_ds import cfize_dataset
+    
     print(op.basename(filepath), "- process_large - process id:", os.getpid())
     
     with xr.open_dataset(filepath, 
@@ -787,13 +857,23 @@ def process_large(
     pass
 
 
-def multiprocess(groups: dict, target_dir: str, n_proc: int, time_units: TimeUnits = None):
+def process_parallel(
+        groups: dict, 
+        target_dir: str, 
+        n_proc: int, 
+        time_units: TimeUnits = None
+):
     '''
     groups:     dimension-specific groups to be processed.
     target_dir: directory in which to write processed NC files.
-    n_proc:     number of processes to use, in addition to controller.
+    n_proc:     number of processes in process pool (doesn't include controller)
     time_units: CF-compliant unit to use for time coordinate.
     '''
+
+    # Verify n_proc + controller doesn't exceed available cores
+    # TODO: confirm this works on Jasmin!
+    if n_proc + 1 > os.cpu_count(): n_proc = os.cpu_count() - 1
+
     results = {dim: [] for dim in groups.keys()}  # set up empty dict for results from process pool
 
     # Set up process pool
@@ -801,49 +881,60 @@ def multiprocess(groups: dict, target_dir: str, n_proc: int, time_units: TimeUni
         
         # Allocate datasets to be processed in increasing order of dimensions
         # Work with 0-2d files first, because 3d processing depends on 0d/1d.
-        for dim in list(groups.keys()).sort():
+        '''
+        ENHANCEMENT: this processing in order of increasing dimension is 
+        critical for converting perturbations to absolutes. For non-MONC data, 
+        it may not be safe to assume that reference variables will be in
+        lower-dimension datasets, so waiting for their completion would hang 
+        execution or fail. A safer alternative would be to export any reference 
+        variables to a standalone NetCDF file, which can then be accessed when 
+        needed. In this case, there should be a flag to indicate when the
+        required variable is available.
+        '''
+        for dim in sorted(list(groups.keys())):
             group = groups[dim]
             print(f"Processing {dim}:{group.name}.")
             
-            if group.action == 'split':
+            if group.action == 'split' or dim == 3:
+                # The 2nd condition ensures that large files are allocated to
+                # the process pool, whether they are to be split or not.
                 
                 # Derive base title/filename from group's stem & dimension
                 title = group.stem + group.name if group.name not in group.stem else group.stem
                 
-                writers = []
-
-                # How many files to split on each process?
-                # Allocate any overspill to controller.
-                files_per_process = int(len(group.filepaths) / (n_proc + 1))
-                files0 = len(group.filepaths) - n_proc * files_per_process
+                for_controller = []
 
                 # Wait for 0+1d processing to finish, so reference variables
                 # are available for perturbations.
-                for d in reference_vars.values():
-                    groups[d].processed = results[d].get()  # 
+                for d in set(reference_vars.values()):
+                    groups[d].processed = [
+                        result.get() for result in results[d]
+                    ]
                 
-                # For each filepath in group, process in a separate Process
-
-                # Allocate all but first subset to worker processes
-                for filepath in group.filepaths[files0:]:
-                    results[dim].append(
-                        pool.apply_async(
-                            func=process_large, 
-                            kwds={
-                                'filepath':filepath, 
-                                'dim':dim,
-                                'title':title, 
-                                'time_var':group.time_var, 
-                                'time_units':time_units,
-                                'target_dir':target_dir,
-                                'split':group.action == 'split'
-                                }
+                # Round-robin allocation of file processing to controller and 
+                # workers:
+                for i, filepath in enumerate(group.filepaths):
+                    # Allocate one file per round to controller
+                    if i%(n_proc+1) == 0:
+                        for_controller.append(filepath)
+                    else:
+                        results[dim].append(
+                            pool.apply_async(
+                                func=process_large, 
+                                kwds={
+                                    'filepath':filepath, 
+                                    'dim':dim,
+                                    'title':title, 
+                                    'time_var':group.time_var, 
+                                    'time_units':time_units,
+                                    'target_dir':target_dir,
+                                    'split':group.action == 'split'
+                                    }
+                                )
                             )
-                        )
                 
                 # Now work on remaining files on controller process
-                for filepath in  group.filepaths[:files0]:
-                    process_large(
+                group.processed = [process_large(
                         filepath=filepath,
                         dim=dim,
                         title=title,
@@ -851,29 +942,107 @@ def multiprocess(groups: dict, target_dir: str, n_proc: int, time_units: TimeUni
                         time_units=time_units,
                         target_dir=target_dir,
                         split=group.action == 'split'
-                    )
+                    ) for filepath in for_controller]
+
+                # Gather completed jobs
+                [group.processed.append(result.get()) 
+                    for result in results[dim]]
+
             # If group is to be merged:
             elif group.action == 'merge':
+                # results[dim] = pool.apply_async(
+                #     func=cf_merge,
+                #     kwds={
+                #         'group': group,
+                #         'time_units': time_units,
+                #         'target_dir': target_dir
+                #     }
+                # )
                 results[dim].append(
                     pool.apply_async(
                     func=cf_merge,
                     kwds={
                         'group': group,
-                        'dim': dim
+                        'time_units': time_units,
+                        'target_dir': target_dir
                     })
                 )
         
+            # Otherwise, process for CF compliance, but leave dataset as a 
+            # single, standalone file.
             else:
-                # Process for CF compliance, but leave dataset as a single,
-                # standalone file.
-                # Could still evaluate by size whether it's processed locally 
-                # or passed to the Pool.
+                # ENHANCEMENT: Could still evaluate by size whether it's 
+                # processed locally or passed to the Pool.
+
+                # Round-robin allocation of file processing to controller and 
+                # workers:
+                
                 pass
 
         # Check all other processes are complete
-        for result in results:
-            print(result.get())  # assuming here that and DirectoryParser.process_by_dim and process_large each return values.
+        # for result in results:
+        #     print(result.get())  # assuming here that and DirectoryParser.process_by_dim and process_large each return values.
+        for dim in list(groups.keys()).sort:
+            # Sort because expect smaller to finish first
+            if not group[dim].processed:
+                group.processed = [result.get() for result in results[dim]]
+
+
+def process_serial(
+        groups: dict, 
+        target_dir: str, 
+        time_units: TimeUnits = None
+):
+    '''
+    groups:     dimension-specific groups to be processed.
+    target_dir: directory in which to write processed NC files.
+    time_units: CF-compliant unit to use for time coordinate.
+    '''
+
+    # Processe datasets in increasing order of dimensions.
+    # Work with 0-2d files first, because 3d processing depends on 0d/1d.
+    '''
+    ENHANCEMENT: this processing in order of increasing dimension is 
+    critical for converting perturbations to absolutes. For non-MONC data, 
+    it may not be safe to assume that reference variables will be in
+    lower-dimension datasets, so waiting for their completion would hang 
+    execution or fail. A safer alternative would be to export any reference 
+    variables to a standalone NetCDF file, which can then be accessed when 
+    needed. In this case, there should be a flag to indicate when the
+    required variable is available.
+    '''
+    for dim in sorted(list(groups.keys())):
+        group = groups[dim]
+        print(f"Processing {dim}:{group.name}.")
         
+        if group.action == 'split':
+            
+            # Derive base title/filename from group's stem & dimension
+            title = group.stem + group.name if group.name not in group.stem else group.stem
+            
+            group.processed = [process_large(
+                    filepath=filepath,
+                    dim=dim,
+                    title=title,
+                    time_var=group.time_var,
+                    time_units=time_units,
+                    target_dir=target_dir,
+                    split=group.action == 'split'
+                ) for filepath in group.filepaths]
+
+        # If group is to be merged:
+        elif group.action == 'merge':
+            group.processed = cf_merge(
+                    group=group,
+                    time_units=time_units,
+                    target_dir=target_dir
+            )
+    
+        # Otherwise, process for CF compliance, but leave dataset as a 
+        # single, standalone file.
+        else:
+            pass
+
 
 @performance_time
 def sort_nc(directory) -> [dict, list]:
@@ -887,7 +1056,7 @@ def sort_nc(directory) -> [dict, list]:
     It would be best if all files of a given run were in one directory, 
     rather than split between 0-2d and 3d.
     '''
-    print('Categorising fields by dimension')
+    print('Categorising files by dimension')
 
     by_dim = {n_dim: DsGroup(
         name=group, n_dims=n_dim, action=DIM_ACTIONS[group]
@@ -977,56 +1146,157 @@ def time_units_from_input(filepaths: list) -> TimeUnits:
             return time_units
             
             
-@performance_time
-def main():
+def parse_arguments():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        'source_dir',
+        help='Directory containing MONC output NetCDF files to process.'
+    )
+    parser.add_argument(
+        '--target_dir', '-t', 
+        dest='target_dir', 
+        help='Directory for processed NetCDF files.',
+        required=False
+    )
+    parser.add_argument(
+        '--reference_time', '-r',
+        dest='ref_time',
+        help='Date or date-time of origin for time units, in ISO format (yyyy-mm-dd[Thh:mm:ss][{+/-UTC offset, hh:mm}]).',
+        required=False
+    )
+    parser.add_argument(
+        '--calendar', '-c',
+        dest='calendar',
+        choices={'gregorian', 'standard', 'none', 'proleptic_gregorian',
+                 '360_day', 'noleap', '365_day', 'all_leap', '366_day',
+                 'julian'},
+        help='Calendar to use for time units.',
+        required=False
+    )
+    parser.add_argument(
+        '--cpus', '-p',
+        dest='n_proc',
+        type=int,
+        choices=range(1, 17),
+        help='Total number of cores to use for parallel processing (including controller process).',
+        required=False
+    )
+    return parser.parse_args()
 
+
+def main():
+    
     print("Main app process id:", os.getpid())
     
-    # TODO: Validate supplied arguments/directory
-    # if source directory not in args, source_dir = os.getcwd()
+    # get command line arguments
+    args = parse_arguments()
+    
+    # Validate supplied directory to parse.
+    if not op.exists(args.source_dir):
+        raise OSError(f'Source directory {op.abspath(source_dir)} not found.')
+    source_dir = op.abspath(args.source_dir)
+    
+    time_units = None
+    # Validate & set reference time if supplied.
+    if args.ref_time:
+        try:
+            ref_time = datetime(args.ref_time)
+        except Exception as e:
+            raise TypeError(f"{args.ref_time} is an invalid reference time. {e}")
+    else:
+        ref_time = None
 
-    # TODO: Set directory to parse & target directory.
-    # source = '/gws/nopw/j04/eurec4auk/monc_prelim_output/jan_28_3d'
-    # target = '/gws/nopw/j04/eurec4auk/cfizer_testing/jan_28_3d'  # op.join(op.dirname(op.dirname(os.getcwd())), 'testing')
-    source_dir = os.path.join(os.path.dirname(app_dir), 'test_data')
-    target_dir = None
-
-    if source_dir and not op.exists(source_dir):
-            raise OSError(f'Directory {source_dir} not found.')
-    # if target directory not in args, 
-    target_dir = op.join(
-        op.dirname(source_dir), f'{op.basename(source_dir)}+processed'
+    # Validate calendar and if possible set time units.
+    calendar = DEFAULT_CALENDAR
+    if args.calendar:
+        try:
+            calendar = Units(calendar=args.calendar).calendar
+        except Exception as e:
+            print(
+                f"Calendar {args.calendar} not valid."
+            )  # This should not be possible
+        if ref_time:
+            try:
+                time_units = TimeUnits(
+                    units=default_time_unit + ' since ' + ref_time.isoformat(),
+                    calendar=calendar)
+            except ValueError as e:
+                print(
+                    f"Could not create valid time units from reference date-time {ref_time} and calendar {calendar}. {e}"
+                )
+    
+    # Get/set directory for output files.
+    target_dir = op.abspath(args.target_dir) if args.target_dir else op.abspath(
+        op.join(op.dirname(source_dir), 
+                f'{op.basename(source_dir)}+processed')
     )
     # If target directory doesn't exist, create it.
     if not op.exists(target_dir):
-        print(f'{target_dir} does not yet exist: making...')
         try:
             os.makedirs(target_dir)
         except OSError as e:
-            raise e
+            raise OSError(
+                f"Unable to create target directory, {target_dir}. {e}"
+            )
+    if not os.access(target_dir, os.W_OK):
+        raise OSError(
+            f"Write permission denied for target directory, {target_dir}."
+        )
+    if not args.target_dir:
+        print(f"Processed files will be saved to: {target_dir}")
+
+    # Set number of processes to place in process pool.
+    # Subtract 1 from number of processes specified, to use one as controller.
+    n_proc = args.n_proc - 1 if args.n_proc else 0
+    if n_proc > os.cpu_count() - 1:
+        raise OSError(
+            f"Not enough cores available for {args.n_proc} processes. Maximum: {os.cpu_count()}."
+        )
+        # TODO: check os.cpu_count() works correctly on JASMIN, when mutliple
+        # cores are allocated.
     
     # Parse directory & categorise NC files by type and dimensions
-    [by_dim, input_files] = sort_nc(source_dir)
+    [group_by_dim, input_files] = sort_nc(source_dir)
     
     # ID time variable of each group from VOCAB.
     
-    # Attempt to derive time unit info.
-    # Assume time units will be common to all.
-    time_units = time_units_from_input(input_files) if input_files else None
+    # Attempt to derive time unit info, if not already supplied at command line.
+    # Assume time units will be common to all datasets in directory.
+    if not time_units:
+        time_units = time_units_from_input(input_files) if input_files else None
+
+    # NOTE: by this stage, time_units should contain a valid reference date /
+    # datetime and calendar. The base units will be set to the default 
+    # 'seconds', but this will be overridden by any units found in time 
+    # coordinate variable(s).
             
     # For each dimension group:
-    # If n_proc in args, use process pool; otherwise process sequentially.
-    if not n_proc or n_proc > os.cpu_count() - 1:
-        n_proc = os.cpu_count() - 1  # Keep one aside as controller
-    
-    multiprocess(groups=by_dim, time_units=time_units, n_proc=n_proc)
+    # If n_proc>0, use process pool; otherwise process sequentially.
+    if n_proc > 0:
+        process_parallel(
+            groups=group_by_dim, 
+            time_units=time_units, 
+            n_proc=n_proc, 
+            target_dir=target_dir
+        )
+    else:
+        process_serial(
+            groups=group_by_dim, 
+            time_units=time_units, 
+            target_dir=target_dir
+        )
 
     # parser.process_by_dim()
-    parser.process_by_dim(dim=3)  # Test split+save components alone.
+    # parser.process_by_dim(dim=3)  # Test split+save components alone.
+
+    # Find dimension groups to be merged
 
     # For each set of dimension groups to be merged:
 
         # Create new group, comprising the groups to be merged.
+
+        # Check all datasets to be merged have matching time coordinates.
+        # If not, give error message and keep datasets separate.
 
         # Merge each group's resultant single dataset:
 

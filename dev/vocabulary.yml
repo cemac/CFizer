@@ -1,7 +1,7 @@
 0:
-  time_series_300_1800:
-    dims:             
-                    - time_series_300_1800
+  time_series_*:  # 300_1800:
+    dims:
+                    - time_series_*
     updated_name:     time
     units:            s
     standard_name:    time
@@ -11,9 +11,9 @@
                     - time_series_300_1800
     long_name:        water vapor path
 1:
-  time_series_300_1800:
-    dims:             
-                    - time_series_300_1800
+  time_series_*:
+    dims:
+                    - time_series_*
     updated_name:     time
     units:            s
     standard_name:    time
@@ -31,9 +31,9 @@
     standard_name:    reference_pressure
     long_name:        Reference Pressure
 2:
-  time_series_1800_1800:
+  time_series_*:
     dims:
-                    - time_series_1800_1800
+                    - time_series_*
     updated_name:     time
     units:            s
     standard_name:    time
@@ -46,9 +46,9 @@
     standard_name:    precipitation_flux_ at_sea_level
     long_name:        Surface Precipitation
 3:
-  time_series_1800_1800:
+  time_series_*:
     dims:
-                    - time_series_1800_1800
+                    - time_series_*
     updated_name:     time
     units:            s
     standard_name:    time

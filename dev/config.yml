@@ -3,7 +3,9 @@ source: Leeds MONC version x
 references: None
 comment: None
 global_to_variable:
-  - MONC timestep
+  MONC timestep:
+    units: s
+    long_name: MONC timestep
 new_coordinate_variables:
   x:
     spacing: dxx
