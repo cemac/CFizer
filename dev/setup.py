@@ -11,9 +11,13 @@ CFizer Version: See __version__
 
 import yaml
 import os
+from datetime import datetime
+import numpy as np
 # from utils import vocab_from_xls
 
 # WILDCARDS = {'*', '?'}
+
+CF_VERSION = '1.10'
 
 DIM_GROUPS = {
     0: '0+1d', 
@@ -56,13 +60,14 @@ DEFAULT_CALENDAR = 'proleptic_gregorian'  # As per ISO 8601:2004.
 DEPHY_OPTIONS = ('dephy_file',)  # 'dephy_forcings_enabled'
 DROP_FOR_DEPHY = ("longitude", "latitude", "z0")
 
-do_not_propagate = {'MONC timestep'}
-
+# Global attributes and their Numpy data types.
+do_not_propagate = {'MONC timestep': np.int32}
 split_attrs = {
-    'title',
-    'MONC time',
-    'Previous diagnostic write at'
+    'title': np.str_,
+    'MONC time': np.float64,
+    'Previous diagnostic write at': np.float64
 }
+group_attrs = {'created': np.datetime64}
 
 '''
 Define required fields in vocabulary file/dictionary, as key: value pairs.
@@ -102,11 +107,15 @@ if 'dev' not in app_dir:
 config_file = open(os.path.join(app_dir, "config.yml"))
 CONFIG = yaml.safe_load(config_file)
 config_file.close()
+for k, v in CONFIG.items():
+    if isinstance(v, str) and v.lower() == 'none':
+        CONFIG[k] = None
 
 vocab_file = open(os.path.join(app_dir, "vocabulary.yml"))
 VOCABULARY = yaml.safe_load(vocab_file)
 vocab_file.close()
 reference_vars = {}
+
 # If dimensions (outermost key) aren't simply digits, assume the dimension is
 # the first character:
 if all([isinstance(k, str) for k in VOCABULARY.keys()]):

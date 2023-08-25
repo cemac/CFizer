@@ -18,6 +18,7 @@ from time import perf_counter, sleep
 import argparse
 import re
 from multiprocessing import Process, Pool  # multiprocess not available in Jaspy environment.
+from cfize_ds import *
 
 
 def performance_time(func):
@@ -83,8 +84,9 @@ def stem_str(*args: str):
 
 def get_time_var(*args: int|xr.Dataset) -> str:
     '''
-    TODO: update to use VOCABULARY[dim]
+    
     '''
+    # If argument is an integer, assume it's the number of spatial dimensions
     if isinstance(args[0], int):
         if args[0] not in VOCABULARY:
             raise KeyError(
@@ -617,17 +619,20 @@ def cf_merge(
     
     print(f"Processing {group.n_dims}:{group.name}.")
 
+    hold_attrs = {}  # Global attributes to be set once for merged group.
+    time_var = {}
+
     processing = list(group.datasets())  # Open all datasets in group.
     for i, ds in enumerate(processing):
         # Find dataset's time coordinate variable
-        time_var = variable_glob(ds=ds, var_glob=group.time_var)
-        if len(time_var) != 1:
+        time_var[i] = variable_glob(ds=ds, var_glob=group.time_var)
+        if len(time_var[i]) != 1:
             # TODO: disambiguation
             raise AttributeError(
                 'Multiple variables found in dataset that match time '
                 f'variable pattern, {group.time_var}.')
         else:
-            time_var = time_var[0]
+            time_var[i] = time_var[i][0]
 
         # Assign any required global attributes to variables, 
         # with associated attributes. Remove global attribute.
@@ -635,11 +640,11 @@ def cf_merge(
         Assume these are only correct for last time-point in series.
         '''
         
-        last_time_point = ds[time_var].data[-1]
+        last_time_point = ds[time_var[i]].data[-1]
         try:
             new_vars = globals_to_vars(
                         ds=ds, 
-                        time_var=time_var, 
+                        time_var=time_var[i], 
                         last_time_point=last_time_point
             )
         except Exception as e:
@@ -648,24 +653,73 @@ def cf_merge(
             ds.attrs.pop(name)
             processing[i] = ds.assign({name: array})  # Need to assign to original dataset in list rather than placeholder ds.
             
-        # Assign any 'one per group' global attributes to temporary 
-        # variables, if larger in current file than current values.
-        
+        # Store largest value per group of any 'one per group' global 
+        # attributes, as value to assign to merged dataset.
+        for attr, attr_type in group_attrs.items():
+            value = ds.attrs[attr]
+            try:
+                value = attr_type(value)
+            except ValueError as e:
+                if attr_type == np.datetime64 or attr_type == datetime:
+                    d, t = value.split()
+                    d = [int(n) for n in d.split('/')]
+                    t = [int(n) for n in t.split(':')]
+                    dt = datetime(
+                        year=d[2],
+                        month=d[1],
+                        day=d[0],
+                        hour=t[0],
+                        minute=t[1],
+                        second=t[2]
+                    )
+                    value = np.datetime64(dt) if attr_type == np.datetime64 else dt
+                else:
+                    raise e
+            if attr in hold_attrs:
+                if value > hold_attrs[attr]:
+                    hold_attrs[attr] = value
+            else:
+                hold_attrs[attr] = value
 
-    # Merge all datasets in group along time variable, & assign 
-    # resulting dataset to new group attribute. Use chunking if 
-    # large.
-
+    if all([tv==time_var[0] for tv in time_var.values()]):
+        time_var = time_var[0]
+    else:
+        #TODO: disambiguate.
+        raise ValueError(
+            f"Inconsistent time variables across dataset group {group.name}."
+            )
+    
+    # Merge all datasets in group along time variable. Use chunking if large.
+    merged = xr.combine_by_coords(
+            processing,
+            combine_attrs='drop_conflicts',
+            join='exact',
+            coords=[time_var],
+            data_vars='minimal'
+        )
+    
     # Close individual datasets, keeping only resultant.
+    del processing
 
     # Apply 'once per group' attributes back to resulting dataset.
+    merged.attrs.update(hold_attrs)
 
     # Derive title/filename from group's stem & dimension
-    
+    merged.attrs.update({'title': group.stem.strip('_ ') + group.n_dims if f'{group.n_dims}d' not in group.stem else group.stem.strip('_ ')})
+
     # Call CF compliance function on dataset. 
+    merged = cfize_dataset(
+        dataset=merged,
+        n_dims=group.n_dims,
+        title=merged.attrs['title'],
+        time_var=time_var,
+        time_units=time_units
+    )
+    
+
     
     # Set filepath and save as processed
-    processed = f"{target_dir}/filename.nc"
+    output = f"{target_dir}/filename.nc"
 
     # Set encoding
 
@@ -673,7 +727,7 @@ def cf_merge(
 
     # Close dataset
 
-    return processed
+    return output
 
 
 def process_large(
@@ -703,7 +757,10 @@ def process_large(
         # Update dataset's title
         ds.attrs['title'] = title
     
-        
+        # Add any missing global attributes required by CF convention
+
+        # Derive any required global attributes from options database
+    
 
         #Call CF compliance function
         ds = cfize_dataset(
