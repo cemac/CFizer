@@ -63,11 +63,17 @@ DROP_FOR_DEPHY = ("longitude", "latitude", "z0")
 # Global attributes and their Numpy data types.
 do_not_propagate = {'MONC timestep': np.int32}
 split_attrs = {
-    'title': np.str_,
-    'MONC time': np.float64,
-    'Previous diagnostic write at': np.float64
+    'MONC time': (
+        lambda i, ds_list: ds_list[i]['time'].data.tolist(), 
+        np.float64
+    ),
+    'Previous diagnostic write at': (
+        lambda i, ds_list: ds_list[0].attrs['Previous diagnostic write at'] 
+        if i == 0 else ds_list[i - 1]['time'].data.tolist(), 
+        np.float64
+    )
 }
-group_attrs = {'created': np.datetime64}
+group_attrs = {'created': datetime}
 
 '''
 Define required fields in vocabulary file/dictionary, as key: value pairs.
@@ -161,16 +167,16 @@ for dim, group in vocabulary.items():
                                'perturbation_to_absolute is True, '
                                'reference_variable must contain the name of '
                                'the variable containing reference value(s).')
-            reference_vars[attributes['reference_variable']] = None
+            reference_vars[attributes['reference_variable']] = {}
 
 # If any variables are perturbations that the user wants to convert to
 # an absolute quantity, by adding a reference variable, track where to
 # find each reference variable by dimension.
 for var in reference_vars.keys():
     # Locate reference variable by dimension group
-    for dim, group in vocabulary.items():
-        if var in group.keys():
-            reference_vars[var] = dim
+    for dim, dim_vars in vocabulary.items():
+        if var in dim_vars.keys():
+            reference_vars[var]['dim'] = dim
     # Throw error if ref variable not found
     if not reference_vars[var]:
         raise ValueError(
