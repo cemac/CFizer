@@ -182,12 +182,12 @@ def missing_coords(dataset: xr.Dataset,
                     f"number or a parameter in the options_database."
             )
         
-        # Skip looking for attributes in VOCABULARY, as these will be updated
+        # Skip looking for attributes in vocabulary, as these will be updated
         # in cfize_variables anyway.
-        # # Look in VOCABULARY for any attributes.
+        # # Look in vocabulary for any attributes.
         # # Allow these values to override any from CONFIG, if they are valid.
-        # if d in VOCABULARY[n_dims].keys():
-        #     for k, v in VOCABULARY[n_dims][d].items():
+        # if d in vocabulary[n_dims].keys():
+        #     for k, v in vocabulary[n_dims][d].items():
         #         if k.lower() == 'axis':
         #             attributes.update({k.lower():v.upper()})
         #         elif k.lower() == 'units' and Units(v).isvalid:
@@ -229,13 +229,9 @@ def cfize_variables(dataset: xr.Dataset,
             # wildcards or use it as a stem. E.g. time_series* should identify 
             # time_series_300_1800 as a match.
 
-        # TODO: if var is time_var, need to use wildcards to match to vocab
-        if var == time_var:
-            pass
-    
         # Find variable's updates in VOCAB[dim][variable].
         try:
-            updates = VOCABULARY[n_dims][var]
+            updates = vocabulary[n_dims][var]
         except KeyError:
             # TODO: once vocab complete, make this an exception.
             print(

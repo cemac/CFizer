@@ -112,17 +112,17 @@ for k, v in CONFIG.items():
         CONFIG[k] = None
 
 vocab_file = open(os.path.join(app_dir, "vocabulary.yml"))
-VOCABULARY = yaml.safe_load(vocab_file)
+vocabulary = yaml.safe_load(vocab_file)
 vocab_file.close()
 reference_vars = {}
 
 # If dimensions (outermost key) aren't simply digits, assume the dimension is
 # the first character:
-if all([isinstance(k, str) for k in VOCABULARY.keys()]):
-    VOCABULARY = {int(k[0]): v for k, v in VOCABULARY.items()}
+if all([isinstance(k, str) for k in vocabulary.keys()]):
+    vocabulary = {int(k[0]): v for k, v in vocabulary.items()}
 
 # Validate entries in vocabulary:
-for dim, group in VOCABULARY.items():
+for dim, group in vocabulary.items():
     for variable, attributes in group.items():
         to_drop = []
         for k, v in attributes.items():
@@ -168,7 +168,7 @@ for dim, group in VOCABULARY.items():
 # find each reference variable by dimension.
 for var in reference_vars.keys():
     # Locate reference variable by dimension group
-    for dim, group in VOCABULARY.items():
+    for dim, group in vocabulary.items():
         if var in group.keys():
             reference_vars[var] = dim
     # Throw error if ref variable not found

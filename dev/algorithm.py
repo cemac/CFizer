@@ -88,11 +88,11 @@ def get_time_var(*args: int|xr.Dataset) -> str:
     '''
     # If argument is an integer, assume it's the number of spatial dimensions
     if isinstance(args[0], int):
-        if args[0] not in VOCABULARY:
+        if args[0] not in vocabulary:
             raise KeyError(
                 'get_time_var: Vocabulary file has no specifications for '
                 f'{args[0]} spatial dimensions.')
-        time_vars = [v for v in VOCABULARY[args[0]].keys() 
+        time_vars = [v for v in vocabulary[args[0]].keys() 
                      if 'time' in v.lower()]
         if not time_vars:
             raise KeyError('get_time_var: No time variable found in '
@@ -235,6 +235,9 @@ class DsGroup:
                 self.time_var = time_variable or get_time_var(self.n_dims)
             except KeyError:
                 if self.filepaths:
+                    # Although it would be best to verify that all member 
+                    # datasets have the same time variable, for now, just use 
+                    # the first one.
                     try:
                         self.time_var = get_time_var(
                             xr.open_dataset(
@@ -242,25 +245,35 @@ class DsGroup:
                             ))
                     except:
                         self.time_var = None    # Search in datasets as files 
-                                                # are added.       
+                                                # are added.
+
+                    # TODO: verify all datasets in group have same time 
+                    # variable & time points.
+                    # if all([tv==time_var[0] for tv in time_var.values()]):
+                    #     time_var = time_var[0]
+                    # else:
+                    #     #TODO: disambiguate.
+                    #     raise ValueError(
+                    #         f"Inconsistent time variables across dataset group {group.name}."
+                    #         )
                 else: 
                     self.time_var = None    # Search in datasets as files are 
                                             # added.
-            # self.datasets is a generator, so any changes made to a member
-            # object must be saved elsewhere, e.g. self.processed or NC file.
-            # self.datasets = ds_feed(self.filepaths)
-                # (xr.open_dataset(
-                # path, decode_times=False
-                # ) for path in self.filepaths)
 
     def datasets(self):
         return ds_feed(self.filepaths)
     
-    def add(self, filepath: str = '') -> None:
+    def add(self, filepath: str) -> None:
         
         if not op.exists(filepath):
             raise OSError(f'DsGroup.add: Filepath {filepath} not found.')
         
+        if op.isdir(filepath):
+            for path in iglob(op.join(filepath, '*.nc'), 
+                              os.pathsep, 
+                              recursive=False):
+                self.add(path)
+
         # Add filepath to collection
         self.filepaths.append(filepath)
         
@@ -273,12 +286,35 @@ class DsGroup:
         if not self.time_var:
             try:
                 self.time_var = get_time_var(
-                    xr.open_dataset(filepath), 
-                    decode_times=False
+                    xr.open_dataset(
+                        filepath, 
+                        decode_times=False
                     )
+                )
             except KeyError:
                 print(f'DsGroup.add: Time variable not found in {filepath}.')
-    
+        # If time variable contains wildcards, seek matching variable in ds. If
+        # found, update vocabulary accordingly.
+        elif len({'*', '?'}.intersection(self.time_var)) > 0:
+            exact_time_var = variable_glob(
+                xr.open_dataset(
+                    filepath, 
+                    decode_times=False
+                ), self.time_var
+            )
+            if len(exact_time_var) != 1:
+                # TODO: disambiguation
+                raise AttributeError(
+                    'Multiple variables found in dataset that match time '
+                    f'variable pattern, {group.time_var}.')
+            exact_time_var = exact_time_var[0]
+            vocabulary[self.n_dims][exact_time_var] = vocabulary[self.n_dims][self.time_var]
+            vocabulary[self.n_dims].pop(self.time_var)
+            self.time_var = exact_time_var
+        else:
+            # TODO: confirm time variable in new dataset matches self.time_var
+            pass
+
     def merge_times(self) -> None:
         pass
 
@@ -620,19 +656,19 @@ def cf_merge(
     print(f"Processing {group.n_dims}:{group.name}.")
 
     hold_attrs = {}  # Global attributes to be set once for merged group.
-    time_var = {}
+    # time_var = {}
 
     processing = list(group.datasets())  # Open all datasets in group.
     for i, ds in enumerate(processing):
         # Find dataset's time coordinate variable
-        time_var[i] = variable_glob(ds=ds, var_glob=group.time_var)
-        if len(time_var[i]) != 1:
-            # TODO: disambiguation
-            raise AttributeError(
-                'Multiple variables found in dataset that match time '
-                f'variable pattern, {group.time_var}.')
-        else:
-            time_var[i] = time_var[i][0]
+        # time_var[i] = variable_glob(ds=ds, var_glob=group.time_var)
+        # if len(time_var[i]) != 1:
+        #     # TODO: disambiguation
+        #     raise AttributeError(
+        #         'Multiple variables found in dataset that match time '
+        #         f'variable pattern, {group.time_var}.')
+        # else:
+        #     time_var[i] = time_var[i][0]
 
         # Assign any required global attributes to variables, 
         # with associated attributes. Remove global attribute.
@@ -640,13 +676,13 @@ def cf_merge(
         Assume these are only correct for last time-point in series.
         '''
         
-        last_time_point = ds[time_var[i]].data[-1]
+        last_time_point = ds[group.time_var].data[-1]  # time_var[i]
         try:
             new_vars = globals_to_vars(
                         ds=ds, 
-                        time_var=time_var[i], 
+                        time_var=group.time_var, 
                         last_time_point=last_time_point
-            )
+            )  # time_var[i]
         except Exception as e:
             raise e
         for name, array in new_vars.items():
@@ -681,20 +717,20 @@ def cf_merge(
             else:
                 hold_attrs[attr] = value
 
-    if all([tv==time_var[0] for tv in time_var.values()]):
-        time_var = time_var[0]
-    else:
-        #TODO: disambiguate.
-        raise ValueError(
-            f"Inconsistent time variables across dataset group {group.name}."
-            )
+    # if all([tv==time_var[0] for tv in time_var.values()]):
+    #     time_var = time_var[0]
+    # else:
+    #     #TODO: disambiguate.
+    #     raise ValueError(
+    #         f"Inconsistent time variables across dataset group {group.name}."
+    #         )
     
     # Merge all datasets in group along time variable. Use chunking if large.
     merged = xr.combine_by_coords(
             processing,
             combine_attrs='drop_conflicts',
             join='exact',
-            coords=[time_var],
+            coords=[group.time_var],
             data_vars='minimal'
         )
     
@@ -712,7 +748,7 @@ def cf_merge(
         dataset=merged,
         n_dims=group.n_dims,
         title=merged.attrs['title'],
-        time_var=time_var,
+        time_var=group.time_var,
         time_units=time_units
     )
     
