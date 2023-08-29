@@ -5,6 +5,9 @@ import xarray as xr
 from glob import iglob
 from setup import *
 import re
+from units import TimeUnits
+from cfize_ds import MoncDs
+from utils import type_from_str
 
 
 def stem_str(*args: str):
@@ -79,12 +82,84 @@ def ds_feed(file_list: list|set|tuple|str):
     return (xr.open_dataset(path, decode_times=False) for path in file_list)
     
 
+def ds_list(file_list: list|set|tuple|str):
+    # ENHANCEMENT: test that all paths supplied are valid & are NC files.
+    if isinstance(file_list, str):
+        file_list = [file_list]
+    return [xr.open_dataset(path, decode_times=False) for path in file_list]
+
+
 def variable_glob(ds: xr.Dataset, var_glob: str) -> list:
     '''
     Takes a glob-style string and finds matching variable(s) in a dataset.
     '''
     match_str = re.compile(var_glob.replace('*', '.*').replace('?','.'))
     return [match_str.fullmatch(v).string for v in set(ds.variables) if match_str.fullmatch(v)]
+
+
+def merge_dimensions(*args) -> xr.Dataset:
+    '''
+    This is designed to merge datasets whose time coordinates match, but contain
+    mutually exclusive sets of data variables.
+
+    Each argument should be an xarray.Dataset object.
+    '''
+    
+    if not all(isinstance(arg, xr.Dataset) for arg in args):
+        raise TypeError('All parameters must be of type xarray.Dataset')
+    
+    if len(args) == 1:  # Should never happen
+        return args[0].copy(deep=True)
+    
+    if len(args) == 2:
+        try:
+            new_ds = args[0].merge(
+                other=args[1], 
+                join='exact', 
+                combine_attrs='drop_conflicts'
+            )
+        except xr.MergeError as e:
+            raise e
+        return new_ds
+    
+    # call recursively until only 2 args to process
+    return merge_dimensions(args[0], merge_dimensions(*args[1:]))
+
+
+def globals_to_vars(ds: xr.Dataset, 
+                    time_var: str, 
+                    last_time_point: int|float) -> xr.Dataset:
+    
+    vars = {}
+    for global_attr, var_attrs in CONFIG['global_to_variable'].items():
+
+        # Any advantage of name = global_attr.replace(' ', '_')?
+
+        if global_attr not in ds.attrs:
+            raise AttributeError
+        
+        if global_attr in do_not_propagate:
+            # assign `np.nan` to each data point except last, and then 
+            # set coords as per other case below.
+            data = type_from_str(ds.attrs[global_attr])
+            coords = [last_time_point]
+
+        else:
+            data = [type_from_str(ds.attrs[global_attr])]*len(ds[group.time_var].data)
+            coords = ds[group.time_var]
+
+        try:
+            vars[global_attr] = xr.DataArray(
+                name=global_attr,
+                data=data,
+                coords={time_var: coords},
+                dims=(time_var,),
+                attrs=var_attrs
+            )
+        except Exception as e:
+            raise e
+        
+    return vars
 
 
 class DsGroup:
@@ -102,27 +177,62 @@ class DsGroup:
         n_dims: Number of *spatial* dimensions (X, Y, Z), ignoring variations 
                 such as z & zn.
         '''
+
+        # global vocabulary, reference_vars
+
         # If groups parameter contains existing DsGroup objects:
         if groups and all([isinstance(g, DsGroup) for g in groups]):
             # check each DsGroup has only one dataset in its processed 
             # attribute.
-            if not all([isinstance(g.processed, xr.Dataset) for g in groups]):
+            if not all([
+                isinstance(g.processed, str) and g.processed[-3:] == '.nc' 
+                for g in groups
+            ]):
                 raise TypeError('DsGroup: To merge DsGroup objects, the '
                                 'processed attribute of each must contain a '
-                                'single xarray.Dataset object.')
+                                'single string containing a NetCDF file path.')
+            
+            self.filepaths = [g.processed for g in groups]
+            
+            # Open each group.processed as xr.Dataset
+            try:
+                self.to_process = [
+                    xr.open_dataset(path, decode_times=False) 
+                    for path in self.filepaths
+                ]  # Dataset objects
+            except OSError:
+                raise OSError(
+                    f"DsGroup: Invalid filepath in processed attribute(s) of "
+                    f"group(s) passed as argument(s): {self.filepaths}."
+                )
+            except Exception as e:
+                raise e
+            
             self.name = stem_str(*[group.name for group in groups])
-            self.n_dims = sum([g.n_dims for g in groups])  # This is a little dubious, given there's no guarantee dimension groups don't overlap, but works for MONC outputs where 0d & 1d are grouped.
-            self.time_var = time_variable or groups[0].time_var
-            if not all([g.time_var == self.time_var for g in groups]):
-                raise ValueError('DsGroup: When attempting to combine groups, '
-                                 'found mismatch in time variables.')
-            self.action = action or 'merge_groups'
-            if 'merge' in self.action:
-                self.process = self.merge_groups
             self.stem = stem_str(*[g.stem for g in groups])
-            self.filepaths = None
-            self.to_process = [g.processed for g in groups]  # Dataset objects
-            self.processed = None  # Dataset object, when completed
+            # Derive combined name from stem of each group's filename stem and 
+            # name.
+            self.name = self.stem.strip(' _') + '_' + self.name
+
+            
+            # Check & identify common time variable.
+            self.n_dims = sum([g.n_dims for g in groups])  # TODO: This is a little dubious, given there's no guarantee dimension groups don't overlap, but works for MONC outputs where 0d & 1d are grouped.
+            
+            self.time_var = time_variable or groups[0].time_var
+            # Check all datasets to be merged have matching time coordinates.
+            if not all([g.time_var == self.time_var for g in groups]):
+                # If not, give error message and keep datasets separate.
+                print(
+                    f'DsGroup: When attempting to combine groups, '
+                    f'found mismatch in time variables: '
+                    f'{[g.time_var for g in groups]}.'
+                )
+                self.action = None
+                # raise ValueError('DsGroup: When attempting to combine groups, '
+                #                  'found mismatch in time variables.')
+            else:
+                self.action = action.lower() if action else 'merge_groups'
+            self.processed = None  # Filepath(s) of output
         else:
             self.n_dims = n_dims    # TODO: Could set to parse files to infer 
                                     # if not given.
@@ -134,6 +244,7 @@ class DsGroup:
             # Cannot set default valueas an empty list in arguments, or it 
             # assigns SAME empty list to every instance.
 
+            self.to_process = None
             self.processed = None  # Filepath(s) of output
             self.stem = stem_str(*self.filepaths) if self.filepaths else None
 
@@ -168,10 +279,15 @@ class DsGroup:
                     self.time_var = None    # Search in datasets as files are 
                                             # added.
 
-    def datasets(self):
+    def yield_datasets(self):
         return ds_feed(self.filepaths)
     
+    def get_datasets(self):
+        return ds_list(self.filepaths)
+    
     def add(self, filepath: str) -> None:
+
+        # global vocabulary  # Allow time variable names to be updated
         
         if not op.exists(filepath):
             raise OSError(f'DsGroup.add: Filepath {filepath} not found.')
@@ -224,9 +340,303 @@ class DsGroup:
             pass
 
     def merge_times(self) -> None:
-        pass
+        '''
+        Should print & return name of saved file(s)
+        '''
 
-    def merge_groups(self) -> None:
-        pass
+        # from cfize_ds import cfize_dataset  # To avoid circular imports
+        # global vocabulary
+        print(f"Process {os.getpid()}: Merging time series in group {self.n_dims}:{self.name}.")
 
+        hold_attrs = {}  # Global attributes to be set once for merged group.
+        # time_var = {}
 
+        processing = self.get_datasets()  # list(self.datasets())  # Open all datasets in group.
+        for i, ds in enumerate(processing):
+            # Find dataset's time coordinate variable
+            # time_var[i] = variable_glob(ds=ds, var_glob=self.time_var)
+            # if len(time_var[i]) != 1:
+            #     # TODO: disambiguation
+            #     raise AttributeError(
+            #         'Multiple variables found in dataset that match time '
+            #         f'variable pattern, {self.time_var}.')
+            # else:
+            #     time_var[i] = time_var[i][0]
+
+            # Assign any required global attributes to variables, 
+            # with associated attributes. Remove global attribute.
+            '''
+            Assume these are only correct for last time-point in series.
+            '''
+            
+            last_time_point = ds[self.time_var].data[-1]  # time_var[i]
+            try:
+                new_vars = globals_to_vars(
+                            ds=ds, 
+                            time_var=self.time_var, 
+                            last_time_point=last_time_point
+                )  # time_var[i]
+            except Exception as e:
+                raise e
+            for name, array in new_vars.items():
+                ds.attrs.pop(name)
+                processing[i] = ds.assign({name: array})  # Need to assign to original dataset in list rather than placeholder ds.
+                
+            # Store largest value per group of any 'one per group' global 
+            # attributes, as value to assign to merged dataset.
+            for attr, attr_type in group_attrs.items():
+                value = ds.attrs[attr]
+                try:
+                    value = attr_type(value)
+                except TypeError as e:
+                    if attr_type == datetime:
+                        try:
+                            value = datetime.fromisoformat(value)
+                        except:
+                            d, t = value.split()
+                            d = [int(n) for n in re.split('[/-]', d)]
+                            t = [int(n) for n in t.split(':')]
+                            try:
+                                value = datetime(
+                                    year=d[2],
+                                    month=d[1],
+                                    day=d[0],
+                                    hour=t[0],
+                                    minute=t[1],
+                                    second=t[2]
+                                )
+                            except ValueError:
+                                value = datetime(
+                                    year=d[0],
+                                    month=d[1],
+                                    day=d[2],
+                                    hour=t[0],
+                                    minute=t[1],
+                                    second=t[2]
+                                )
+                    else:
+                        raise e
+                if attr in hold_attrs:
+                    if value > hold_attrs[attr]:
+                        hold_attrs[attr] = value
+                else:
+                    hold_attrs[attr] = value
+
+        # Merge all datasets in group along time variable. 
+        # TODO: Use chunking if large.
+        self.to_process = xr.combine_by_coords(
+            processing,
+            combine_attrs='drop_conflicts',
+            join='exact',
+            coords=[self.time_var],
+            data_vars='minimal'
+        )  # Assigned to self.to_process, because this becomes dataset to process for CF compliance.
+        
+        # Close individual datasets, keeping only resultant.
+        del processing
+
+        # Apply 'once per group' attributes back to resulting dataset.
+        # Convert any datetime objects to strings, so xarray.Dataset.to_netcdf 
+        # can work with them. This can't be done until now, because finding the 
+        # maximum requires the correct data type.
+        for k, v in hold_attrs.items():
+            if isinstance(v, (datetime)):
+                hold_attrs[k] = v.isoformat(sep=' ')
+        self.to_process.attrs.update(hold_attrs)
+
+        # Derive title/filename from group's stem & dimension
+        # merged.attrs.update({'title': self.stem.strip('_ ') + self.n_dims if f'{self.n_dims}d' not in self.stem else self.stem.strip('_ ')})
+        self.to_process.attrs['title'] = self.stem.strip('_ ') + self.n_dims if f'{self.n_dims}d' not in self.stem else self.stem.strip('_ ')
+
+    def merge_groups(self, target_dir: str) -> None:
+        """
+        This function assumes the member subgroups have already been 'CFized'.
+        That means any date(time) attributes will be expected in ISO format
+        (yyyy-mm-dd[[T]hh:mm:ss])
+        """
+
+        print(f"Process {os.getpid()}: merging groups - {self.name} with {self.n_dims} dimensions.")
+        
+
+        if self.action != 'merge_groups':
+            print(
+                'merge_groups is not valid if group.action != "merge_groups".'
+            )
+            return
+        
+        hold_attrs = {}  # Global attributes to be set once for merged group.
+
+        self.to_process = self.get_datasets()
+
+        for i, ds in enumerate(self.to_process):
+        # Store largest value per group of any 'one per group' global 
+        # attributes, as value to assign to merged dataset.
+            for attr, attr_type in group_attrs.items():
+                value = ds.attrs[attr]
+                try:
+                    value = attr_type(value)
+                except TypeError as e:
+                    if attr_type == datetime:
+                        try:
+                            value = datetime.fromisoformat(value)
+                        except:
+                            d, t = value.split()
+                            d = [int(n) for n in re.split('[/-]', d)]
+                            t = [int(n) for n in t.split(':')]
+                            value = datetime(
+                                year=d[0],
+                                month=d[1],
+                                day=d[2],
+                                hour=t[0],
+                                minute=t[1],
+                                second=t[2]
+                            )
+                    else:
+                        raise e
+                if attr in hold_attrs:
+                    if value > hold_attrs[attr]:
+                        hold_attrs[attr] = value
+                else:
+                    hold_attrs[attr] = value
+
+        # xarray.Dataset.merge -> new dataset.
+        merged = merge_dimensions(*self.to_process)
+        
+        # Close source datasets
+        [ds.close() for ds in self.to_process]
+
+        # Apply 'once per group' attributes back to resulting dataset.
+        # Convert any datetime objects to strings, so xarray.Dataset.to_netcdf 
+        # can work with them. This can't be done until now, because finding the 
+        # maximum requires the correct data type.
+        for k, v in hold_attrs.items():
+            if isinstance(v, (datetime)):
+                hold_attrs[k] = v.isoformat(sep=' ')
+        merged.attrs.update(hold_attrs)
+
+        # Assign new title to new dataset
+        merged.attrs['title'] = self.name
+        
+        # Set filepath and save as processed
+        filepath = op.join(target_dir, f"{merged.attrs['title']}.nc")
+
+        # Set encoding
+        # TODO: encoding needs to be set, with each variable's encoding 
+        # specified. Otherwise, _FillValue is applied to all, including 
+        # coordinates, the latter contravening CF Conventions.
+        encodings = {
+            k:{
+                'dtype': v.dtype,
+                '_FillValue': None
+            } for k, v in merged.variables.items()
+        }  # if k == 'options_database' or k in ds.ds.coords
+
+        # Save dataset to NetCDF
+        # xarray docs report engine='h5netcdf' may sometimes be 
+        # faster. However, it doesn't natively handle the 
+        # various string length types used here.
+        merged.to_netcdf(
+            path=filepath, 
+            encoding=encodings)  # , engine='h5netcdf'
+
+        # TODO: Run each file through cf-checker?
+        
+        # Close dataset
+        merged.close()
+
+        self.processed = filepath
+        
+    def cf_only(self, 
+                time_units: TimeUnits, 
+                target_dir: str):
+        '''
+        TODO: This function still to be tested.
+        '''
+        print(f"Processing {group.n_dims}:{group.name}.")
+
+        # self.to_process = list(self.datasets())  # Open all datasets in group.
+        self.cfize_and_save(target_dir=target_dir, time_units=time_units)
+        
+    
+    def cfize_and_save(self, 
+                       target_dir: str, 
+                       time_units: TimeUnits,
+                       vocab: dict
+                       ):
+        
+        print(f"Process {os.getpid()}: cfizing & saving datasets in group {self.name} with {self.n_dims} dimensions.")
+
+        # global reference_vars  # Allow reference_vars to be updated.
+        self.processed = []
+
+        if self.to_process and isinstance(self.to_process, xr.Dataset):
+            self.to_process = [self.to_process]
+        else:
+            self.to_process = self.get_datasets()
+
+        for dataset in self.to_process:
+            # Set up MoncDs object for further processing
+            ds = MoncDs(
+                dataset=dataset,
+                time_units=time_units,
+                time_variable=self.time_var,
+                n_dims=self.n_dims,
+                title=dataset.attrs['title']
+            )
+            
+            # Call CF compliance function on dataset.
+            cf_ds = ds.cfize(vocab=vocab)  # xarray.Dataset
+
+            # Check whether time variable name has changed
+            self.time_var = ds.time_var # Update group's time_var to match 
+                                        # any update to merged dataset's.
+
+            # Set filepath and save as processed
+            filepath = op.join(target_dir, f"{cf_ds.attrs['title']}.nc")
+
+            # Check for any reference variables for perturbation variables, and 
+            # note filepath if found:
+            # [
+            #     reference_vars[v].update({'filepath':filepath})
+            #     for v in reference_vars.keys()
+            #     if v in cf_ds.variables
+            # ]
+            [
+                vocab[reference_vars[v]['for'][0]][reference_vars[v]['for'][1]].update({'ref_array': cf_ds[v]})
+                for v in reference_vars.keys()
+                if v in cf_ds.variables
+            ]
+            
+            # [vocabulary[loc_dict['dim']][ref_var] for ref_var, loc_dict in reference_vars.items()]
+
+            # Set encoding
+            # TODO: encoding needs to be set, with each variable's encoding 
+            # specified. Otherwise, _FillValue is applied to all, including 
+            # coordinates, the latter contravening CF Conventions.
+            encodings = {
+                k:{
+                    'dtype': v.dtype,
+                    '_FillValue': None
+                } for k, v in cf_ds.variables.items()
+            }  # if k == 'options_database' or k in ds.ds.coords
+
+            # Save dataset to NetCDF
+            # xarray docs report engine='h5netcdf' may sometimes be 
+            # faster. However, it doesn't natively handle the 
+            # various string length types used here.
+            cf_ds.to_netcdf(
+                path=filepath, 
+                encoding=encodings)  # , engine='h5netcdf'
+
+            # TODO: Run each file through cf-checker?
+            
+            # Close dataset
+            cf_ds.close()
+
+            self.processed.append(filepath)
+
+        if len(self.processed) == 1:
+            self.processed = self.processed[0]
+
+        # return vocab
+    

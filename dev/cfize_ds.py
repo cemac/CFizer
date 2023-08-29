@@ -5,7 +5,7 @@ import os.path as op
 from setup import *
 from utils import type_from_str, format_units, generate_coords
 from cfunits import Units
-from groups import DsGroup
+# from groups import DsGroup
 
 
 def get_n_dims(dataset: xr.Dataset) -> int:
@@ -21,17 +21,17 @@ class MoncDs:
                  time_units: TimeUnits,
                  time_variable:str=None,
                  n_dims:int=None,
-                 title:str=None,
-                 group:DsGroup=None,
-                 ) -> None:
+                 title:str=None
+                 ) -> None:  # , group:DsGroup=None,
+        
         
         self.ds = dataset
         self.time_units = time_units
 
         if time_variable:
             self.time_var = time_variable
-        elif group:
-            self.time_var = group.time_var
+        # elif group:
+        #     self.time_var = group.time_var
         else:
             raise AttributeError(
                 "DsGroup: time variable must be specified via either of the "
@@ -40,23 +40,29 @@ class MoncDs:
         
         if n_dims:
              self.n_dims = n_dims
-        elif group:
-            self.n_dims = group.n_dims
+        # elif group:
+        #     self.n_dims = group.n_dims
         else:
             # Find number of dimensions from dataset
             self.n_dims = get_n_dims(self.ds) - 1  # Subtract 1 for time.
         
         if title:
             self.ds.attrs['title'] = title
-        elif group: 
-            self.ds.attrs['title'] = group.stem.strip('_ ') + group.name if group.name not in group.stem else group.stem.strip('_ ')
+        # elif group: 
+        #     self.ds.attrs['title'] = group.stem.strip('_ ') + group.name if group.name not in group.stem else group.stem.strip('_ ')
         elif 'title' not in self.ds.attrs:
             raise AttributeError(
-                "MoncDs: dataset title is missing. This can be defined via the "
-                "title or group parameters."
+                "MoncDs: dataset title is missing."
             )
         
-    def cfize(self):
+    def cfize(self, vocab:dict):
+        '''
+        vocabulary can't be global, because this creates conflicts in parallel
+        processing.
+        '''
+
+        print(f"Process {os.getpid()}: cfize running on MONC dataset {self.ds.attrs['title']} with {self.n_dims} spatial dimensions.")
+
         # Pull required options_database info into dictionary
         self.options_db = get_options(
             dataset=self.ds, 
@@ -79,7 +85,7 @@ class MoncDs:
         var_list = set(self.ds.variables)
         var_list.discard(OPTIONS_DATABASE['variable'])
         [var_list.discard(v) for v in CONFIG['global_to_variable'].keys()]
-        self.cfize_variables(variables=var_list)
+        self.cfize_variables(variables=var_list, vocab=vocab)
 
         # Return processed dataset
         return self.ds
@@ -203,13 +209,14 @@ class MoncDs:
                     elif self.ds[var].attrs['units'].lower() == 'fraction':
                         self.ds[var].attrs['units'] = '1'
                     else:
-                        print(
-                            f"{self.ds[var].attrs['units']}: invalid units for "
-                            f"variable {var} in dataset "
-                            f"with title {self.ds.attrs['title']}, and no "
-                            f"new units specified in vocabulary under "
-                            f"dimension {self.n_dims}."
-                        )
+                        pass
+                        # print(
+                        #     f"{self.ds[var].attrs['units']}: invalid units for "
+                        #     f"variable {var} in dataset "
+                        #     f"with title {self.ds.attrs['title']}, and no "
+                        #     f"new units specified in vocabulary under "
+                        #     f"dimension {self.n_dims}."
+                        # )
                         # raise ValueError(
                         #     f"{self.ds[var].attrs['units']}: invalid units for "
                         #     f"variable {var} in dataset "
@@ -218,10 +225,10 @@ class MoncDs:
                         #     f"dimension {self.n_dims}."
                         # )
             else:
-                print(
-                    f"No units specified for {var} in vocabulary "
-                    f"({self.n_dims}d), and no existing units found."
-                )
+                # print(
+                #     f"No units specified for {var} in vocabulary "
+                #     f"({self.n_dims}d), and no existing units found."
+                # )
                 return
                 # raise AttributeError(
                 #     f"CF conventions require that units be specified for each "
@@ -299,7 +306,10 @@ class MoncDs:
             self.ds[var].attrs['units'] = format_units(new_units)
 
     def cfize_variables(self, 
-                        variables: list|set|tuple):
+                        variables: list|set|tuple,
+                        vocab: dict):
+        
+        print(f"Process {os.getpid()}: cfizing variables on MONC dataset {self.ds.attrs['title']} with {self.n_dims} spatial dimensions.")
         
         # Process any coordinate variables first, as changes in these may affect
         # processing of data variables.
@@ -318,12 +328,12 @@ class MoncDs:
 
             # Find variable's updates in VOCAB[dim][variable].
             try:
-                updates = vocabulary[self.n_dims][var]
+                updates = vocab[self.n_dims][var]
             except KeyError:
-                print(
-                    f"cfize_variables: {var} not found in vocabulary "
-                    f"(dimension {self.n_dims})."
-                )
+                # print(
+                #     f"cfize_variables: {var} not found in vocabulary "
+                #     f"(dimension {self.n_dims})."
+                # )
                 # check/update any units already present.
                 self.update_units(var=var)
                 continue
@@ -453,34 +463,36 @@ class MoncDs:
                         f"{variable}: If perturbation_to_absolute is True, "
                         f"reference_variable must contain the name of the "
                         f"variable containing reference value(s).")
-                # Look up reference variable's dimension
-                ref_var = updates['reference_variable']
-                if ref_var not in self.ds.variables:
-                    # Look up NC file containing reference variable in other 
-                    # dimension groups
+                
+                ref_array = updates['ref_array']
+                # # Look up reference variable's dimension
+                # ref_var = updates['reference_variable']
+                # if ref_var not in self.ds.variables:
+                #     # Look up NC file containing reference variable in other 
+                #     # dimension groups
 
-                    # # Open dataset of corresponding group
-                    # while not ref_group.processed:  # op.exists(ref_ds_path):
-                    #        sleep(1)
+                #     # # Open dataset of corresponding group
+                #     # while not ref_group.processed:  # op.exists(ref_ds_path):
+                #     #        sleep(1)
                     
-                    # '''
-                    # This assumes required variable is in a merged dataset. Will 
-                    # need more rigorous mapping if this cannot be assumed.
-                    # '''
+                #     # '''
+                #     # This assumes required variable is in a merged dataset. Will 
+                #     # need more rigorous mapping if this cannot be assumed.
+                #     # '''
     
-                    # NB: can't wait for reference_vars[ref_var]['filepath']
-                    # to appear here, as it will be updated on a different
-                    # process, with its own copy of the dictionary.
+                #     # NB: can't wait for reference_vars[ref_var]['filepath']
+                #     # to appear here, as it will be updated on a different
+                #     # process, with its own copy of the dictionary.
                     
-                    with xr.open_dataset(
-                        reference_vars[ref_var]['filepath'],
-                        decode_times=False
-                    ) as ref_ds:
-                        # Pull out reference variable as DataArray.
-                        ref_array = ref_ds[ref_var]
-                else:
-                    # Pull out reference variable as DataArray.
-                    ref_array = self.ds[ref_var]
+                #     with xr.open_dataset(
+                #         reference_vars[ref_var]['filepath'],
+                #         decode_times=False
+                #     ) as ref_ds:
+                #         # Pull out reference variable as DataArray.
+                #         ref_array = ref_ds[ref_var]
+                # else:
+                #     # Pull out reference variable as DataArray.
+                #     ref_array = self.ds[ref_var]
 
                 # Add reference DataArray to perturbation variable DataArray, & 
                 # re-assign to variable as new array with existing attributes, 

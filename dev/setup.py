@@ -53,7 +53,7 @@ FROM_INPUT_FILE = {
     'reftime': 'time'
 }
 
-CHUNKING_DIMS = {'z': 16, 'zn':16}  # Ideally chunk sizes should be power of 2.
+CHUNKING_DIMS = {'z': 4, 'zn':4}  # Ideally chunk sizes should be power of 2.
 
 DEFAULT_CALENDAR = 'proleptic_gregorian'  # As per ISO 8601:2004.
 
@@ -167,7 +167,10 @@ for dim, group in vocabulary.items():
                                'perturbation_to_absolute is True, '
                                'reference_variable must contain the name of '
                                'the variable containing reference value(s).')
-            reference_vars[attributes['reference_variable']] = {}
+            reference_vars[attributes['reference_variable']] = {
+                'for': (dim, variable)
+            }
+
 
 # If any variables are perturbations that the user wants to convert to
 # an absolute quantity, by adding a reference variable, track where to
@@ -177,6 +180,7 @@ for var in reference_vars.keys():
     for dim, dim_vars in vocabulary.items():
         if var in dim_vars.keys():
             reference_vars[var]['dim'] = dim
+            vocabulary[reference_vars[var]['for'][0]][reference_vars[var]['for'][1]].update({'ref_dim': dim, 'ref_array': None})
     # Throw error if ref variable not found
     if not reference_vars[var]:
         raise ValueError(

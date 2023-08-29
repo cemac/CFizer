@@ -218,3 +218,14 @@ if __name__ == '__main__':
     print('kg/m^2/s =', format_units('kg/m^2/s'))
     print('kg m/s^2 =', format_units('kg m/s^2'))
     print('kg/kg =', format_units('kg/kg'))
+
+
+def tf(string) -> bool:
+    '''
+    Adapted from https://stackoverflow.com/a/43357954
+    '''
+    if isinstance(string, bool):
+        return string
+    return True if string.lower() in {
+        'true', 'yes', 't', 'y', '1'
+    } else False
