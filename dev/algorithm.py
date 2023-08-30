@@ -10,93 +10,38 @@ from cfunits import Units
 import numpy as np
 from datetime import datetime, timezone
 import typing
-from utils import type_from_str, tf
-from dask.delayed import Delayed
+from utils import type_from_str, tf, performance_time
 # from dask.diagnostics import ProgressBar
-from time import perf_counter, sleep
+from time import perf_counter
 import argparse
 from multiprocessing import Process, Pool, set_start_method  # multiprocess not available in Jaspy environment.
 from cfize_ds import *
 from units import TimeUnits
 from groups import DsGroup, globals_to_vars
 import re
-
-
-def performance_time(func):
-	def wrapper(*args, **kwargs):
-		start_time = perf_counter()
-		response = func(*args, **kwargs)  # run the wrapped function
-		end_time = perf_counter()
-		duration = end_time - start_time
-		print(f"{func} on process {os.getpid()} took {duration} seconds.")  # ({args}, {kwargs})
-		return response
-	return wrapper
-
-
-def is_monc(dataset: xr.Dataset) -> bool:
-    return MONC_ID_ATTR in set(dataset.attrs).union(set(dataset.variables))
-
-
-def split_ds(dataset: xr.Dataset, var: str = 'time') -> list[xr.Dataset]:
-    # Because xarray.Dataset.sel only creates datasets that point to the
-    # original, any changes to global attributes etc in one dataset will
-    # propagate to all. To create independent datasets, each resulting ds
-    # must be deep-copied.
-
-    # TODO: check groupby creates independent datasets. If not, need to copy.
-
-    if var not in dataset.dims:
-        raise AttributeError(f'split_ds: {var} not in dataset dimensions.')
-    print(f'Splitting dataset {dataset.attrs["title"]} by {var} on process {os.getpid()}.')
-    grouped = {v: ds for (v, ds) in dataset.groupby(var)}
-    for k, v in grouped.items():
-        # Append relevant coordinate value to title
-        v.attrs['title'] = v.attrs['title'].strip('_ +,.&') + '_' + str(int(k))
-        print(f'Created new dataset with title, {v.attrs["title"]}')
-    split = list(grouped.values())
-    return split
-
-
-@performance_time
-def ds_to_nc(ds: xr.Dataset, filepath: str, encodings: dict = None) -> None:
-    ds.to_netcdf(
-        path=filepath, 
-        encoding=encodings
-        )
-    
-
-@performance_time
-def ds_to_nc_dask(ds: xr.Dataset, filepath: str, encodings: dict = None) -> Delayed:
-    return ds.to_netcdf(
-        path=filepath, 
-        encoding=encodings, 
-        compute=False
-        )
-    # writer.compute()
-
-
-@performance_time
-def perform_write(writer: Delayed) -> None:
-    writer.compute()
+import sys
 
 
 def process_large(
         filepath: str, 
         group: DsGroup,
         title: str, 
-        time_units: TimeUnits, 
-        target_dir: str,
-        global_vars: dict = None
+        shared: dict
     ) -> str:
-    '''
-    Should return name of saved file(s)
-    '''
-
-    if global_vars:
-        global reference_vars, vocabulary
-        reference_vars = global_vars['reference_vars']
-        vocabulary = global_vars['vocabulary']
     
+    update_globals = {}  # This is not currently used, but is here for consistency with cf_merge
+
+    # time_units = shared['time_units']
+    target_dir = shared['target_dir']
+    # reference_vars = shared['reference_vars']
+
+    # if global_vars:
+    #     global reference_vars, vocabulary
+    #     reference_vars = global_vars['reference_vars']
+    #     vocabulary = global_vars['vocabulary']
+
+    group.processed = []
+
     print(f"process_large running on process {os.getpid()}: group {group.name} - file {op.basename(filepath)}")
     
     with xr.open_dataset(filepath, 
@@ -129,7 +74,6 @@ def process_large(
         # Create MoncDs object for futher processing, and update dataset's title
         monc_ds = MoncDs(
             dataset=dataset,
-            time_units=time_units,
             time_variable=group.time_var,
             n_dims=group.n_dims,
             title=title
@@ -138,7 +82,7 @@ def process_large(
         #Call CF compliance function:
             # Adds any missing global attributes required by CF convention
             # Derives any required global attributes from options database
-        monc_ds.cfize(vocab=vocabulary)
+        monc_ds.cfize(shared=shared)
         # ds = cfize_dataset(
         #     dataset=ds,
         #     n_dims=dim,
@@ -178,6 +122,13 @@ def process_large(
         encodings = {
             k:{
                 'dtype': v.dtype,
+                '_FillValue': None,
+                COMPRESSION[1]: COMPRESSION[0],
+                'complevel': COMPRESSION[2]
+            } for k, v in ds.variables.items()
+        } if COMPRESSION[0] else {
+            k:{
+                'dtype': v.dtype,
                 '_FillValue': None
             } for k, v in ds.variables.items()
         }
@@ -198,49 +149,59 @@ def process_large(
         print(f"Preparing delayed writer for {filepath} on process {os.getpid()}.")
         writers.append(ds_to_nc_dask(ds=ds,
                                 filepath=filepath,
-                                encodings=encodings
+                                encodings=encodings,
+                                compress=COMPRESSION[0]
                                 ))
         ds.close()
+        group.processed.append(filepath)
+
     print(f"Computing writes on process {os.getpid()}.")
     [perform_write(writer) for writer in writers]
     
     # TODO: Run CF checker on output files
     
 
-    return processed
+    return (group.processed, update_globals)
+    # return (group, shared)
 
 
 def cf_merge(group: DsGroup, 
-             target_dir: str, 
-             time_units: TimeUnits,
-             global_vars: dict) -> str:
+             shared: dict) -> str:
     
     print(f"cf_merge running on process {os.getpid()}: group {group.name}")
-    
-    if global_vars:
-        global vocabulary, reference_vars
-        reference_vars = global_vars['reference_vars']
-        vocabulary = global_vars['vocabulary']
+    # target_dir = shared['target_dir']
+    # time_units = shared['time_units']
+    # reference_vars = shared['reference_vars']
+
+    # if global_vars:
+    #     global vocabulary, reference_vars
+    #     reference_vars = global_vars['reference_vars']
+    #     vocabulary = global_vars['vocabulary']
     
     group.merge_times()
-    group.cfize_and_save(target_dir=target_dir, time_units=time_units, vocab=vocabulary)
-    return (group, vocabulary)
+    update_globals = group.cfize_and_save(shared=shared)
+    return (group.processed, update_globals)
 
 
 def process_parallel(
         groups: dict, 
-        target_dir: str, 
         n_proc: int, 
-        time_units: TimeUnits = None
+        shared: dict
 ):
     '''
     groups:     dimension-specific groups to be processed.
-    target_dir: directory in which to write processed NC files.
     n_proc:     number of processes in process pool (doesn't include controller)
-    time_units: CF-compliant unit to use for time coordinate.
+    shared:     dictionary containing what would be global variables if all
+                functions were running on a single process. Global constants
+                will still work as normal.
     '''
 
-    global reference_vars, vocabulary
+    target_dir = shared['target_dir']
+    time_units = shared['time_units']
+    # vocabulary = shared['vocabulary']
+    reference_vars = shared['reference_vars']
+
+    # global reference_vars, vocabulary
     # Verify n_proc + controller doesn't exceed available cores
     # TODO: confirm this works on Jasmin!
     if n_proc + 1 > os.cpu_count(): n_proc = os.cpu_count() - 1
@@ -283,7 +244,17 @@ def process_parallel(
                 # are available for perturbations.
                 for d in {v['dim'] for v in reference_vars.values()}:
                     for r in results[d]:
-                        groups[d], vocabulary = r.get()
+                        processed, update_globals = r.get()
+                        if groups[d].processed:
+                            groups[d].processed += processed
+                        else:
+                            groups[d].processed = processed
+                        if update_globals:
+                            if 'vocabulary' in update_globals:
+                                [[shared['vocabulary'][v_dim][update_var].update(update_dict) for update_var, update_dict in updates.items()] for v_dim, updates in update_globals['vocabulary'].items()]
+                                # for v_dim, updates in update_globals['vocabulary'].items():
+                                #     for update_var, update_dict in updates.items():
+                                #         shared['vocabulary'][v_dim][update_var].update(update_dict)
                         # [reference_vars.update({v: result[v]}) 
                         #  for v in result.keys() if 'filepath' in result[v]]
                     # groups[d].processed = [
@@ -305,31 +276,40 @@ def process_parallel(
                                     'filepath':filepath, 
                                     'group':group,
                                     'title':title, 
-                                    'time_units':time_units,
-                                    'target_dir':target_dir, 
-                                    'global_vars': {
-                                        'reference_vars': reference_vars,
-                                        'vocabulary': vocabulary
-                                    }
+                                    'shared':shared
                                 }
                             )
                         )
                 
                 # Now work on remaining files on controller process
-                group.processed = []
-                [
-                    [
-                        group.processed.append(ds) 
-                        for ds in process_large(
-                            filepath=filepath,
-                            group=group,
-                            title=title,
-                            time_units=time_units,
-                            target_dir=target_dir
-                        )
-                    ] for filepath in for_controller
-                ]
-
+                # group.processed = []
+                # [
+                #     [
+                #         group.processed.append(ds) 
+                #         for ds in process_large(
+                #             filepath=filepath,
+                #             group=group,
+                #             title=title,
+                #             shared=shared
+                #         )
+                #     ] for filepath in for_controller
+                # ]
+                for filepath in for_controller:
+                    if groups[dim].processed:
+                        groups[dim].processed += process_large(
+                                filepath=filepath,
+                                group=group,
+                                title=title,
+                                shared=shared
+                            )[0]
+                    else:
+                        groups[dim].processed = process_large(
+                                filepath=filepath,
+                                group=group,
+                                title=title,
+                                shared=shared
+                            )[0]
+                
                 # Gather completed jobs
                 # TODO: is this efficient, or can it be done after merging 
                 # groups?
@@ -337,12 +317,11 @@ def process_parallel(
                 # be updated in the process_large function, then the group
                 # returned.
                 # [result.get() for result in results[dim]]
-                [
-                    [
-                        group.processed.append(ds) for ds in result.get()
-                    ] 
-                    for result in results[dim]
-                ]
+                for result in results[dim]:
+                    if groups[dim].processed:
+                        groups[dim].processed += result.get()[0]
+                    else:
+                        groups[dim].processed = result.get()[0]
 
             # If group is to be merged:
             elif group.action == 'merge':
@@ -359,12 +338,7 @@ def process_parallel(
                         func=cf_merge,
                         kwds={
                             'group': group,
-                            'time_units': time_units,
-                            'target_dir': target_dir,
-                            'global_vars': {
-                                'reference_vars': reference_vars,
-                                'vocabulary': vocabulary
-                            }
+                            'shared': shared
                         }
                     )
                 )
@@ -398,7 +372,10 @@ def process_parallel(
         for dim in sorted(list(groups.keys())):
             # Sort because expect smaller to finish first
             if not groups[dim].processed:
-                [groups.update({dim: result.get()[0]}) for result in results[dim]]
+                groups[dim].processed = []
+                for result in results[dim]:
+                    groups[dim].processed += result.get()[0]
+                # [groups.update({dim: result.get()[0]}) for result in results[dim]]
                 # groups[dim].processed = [
                 #     result.get() for result in results[dim]
                 # ]
@@ -412,7 +389,7 @@ def cfize_all_datasets(
     ) -> list:
     '''
     Should print & return names of saved files
-    TODO: This function still to be tested.
+    TODO: This function still to be written tested.
     '''
 
 #     print(f"Processing {group.n_dims}:{group.name}.")
@@ -480,14 +457,19 @@ def cfize_all_datasets(
 
 def process_serial(
         groups: dict, 
-        target_dir: str, 
-        time_units: TimeUnits = None
+        shared: dict
 ):
     '''
-    groups:     dimension-specific groups to be processed.
-    target_dir: directory in which to write processed NC files.
-    time_units: CF-compliant unit to use for time coordinate.
+    groups:         dimension-specific groups to be processed.
+    shared:         dictionary containing what would be global variables if all
+                    functions were running on a single process. Global constants
+                    will still work as normal.
+        target_dir: directory in which to write processed NC files.
+        time_units: CF-compliant unit to use for time coordinate.
     '''
+
+    target_dir = shared['target_dir']
+    time_units = shared['time_units']
 
     # Processe datasets in increasing order of dimensions.
     # Work with 0-2d files first, because 3d processing depends on 0d/1d.
@@ -514,8 +496,7 @@ def process_serial(
                     filepath=filepath,
                     group=group,
                     title=title,
-                    time_units=time_units,
-                    target_dir=target_dir
+                    shared=shared
                 ) for filepath in group.filepaths]
 
         # If group is to be merged:
@@ -541,7 +522,6 @@ def process_serial(
             # )
 
 
-# @performance_time
 def sort_nc(directory) -> [dict, list]:
     '''
     Sorts into MONC output files and other NC files, the latter listed as
@@ -589,7 +569,7 @@ def sort_nc(directory) -> [dict, list]:
     return [by_dim, input_files]
 
 
-@performance_time
+
 def time_units_from_input(filepaths: list) -> TimeUnits:
     '''
     Attempt to find time unit data in possible input file(s).
@@ -705,10 +685,10 @@ def parse_arguments():
     )
     return parser.parse_args()
 
-@performance_time
 def main():
-    
-    print("Main app process id:", os.getpid())
+    start_time = perf_counter()  # wrapping in performance counter doesn't work, presumably because of multiprocessing.
+
+    print(f"Main app process id: {os.getpid()}")  # , started {start_time}
 
     global vocabulary
     
@@ -797,20 +777,26 @@ def main():
     # 'seconds', but this will be overridden by any units found in time 
     # coordinate variable(s).
             
+    shared = {
+        'target_dir': target_dir,
+        'time_units': time_units,
+        'vocabulary': vocabulary,
+        'reference_vars': reference_vars
+    }   # These are global variables (not constants), but must be passed 
+        # explicitly to any functions that may run on a separate process.
+    
     # For each dimension group:
     # If n_proc>0, use process pool; otherwise process sequentially.
     if n_proc > 0:
         process_parallel(
             groups=group_by_dim, 
-            time_units=time_units, 
             n_proc=n_proc, 
-            target_dir=target_dir
+            shared=shared
         )
     else:
         process_serial(
             groups=group_by_dim, 
-            time_units=time_units, 
-            target_dir=target_dir
+            shared=shared
         )
 
     # TODO: move the following to the process_* routines?
@@ -832,14 +818,28 @@ def main():
             # Merge each group's resultant single dataset
             merger.merge_groups(target_dir=target_dir)
             
+        group_by_dim[re.split(merger.stem,merger.name)[1]] = merger
+
         # Delete interim NC files, unless flagged to do otherwise.
         # TODO: this needs to wait until all 3d are done.
         if not args.keep_interim:
             [os.remove(f) for f in merger.filepaths]
 
+    # Output list of actions taken: each list of merged files & what file they were merged into; each split file and list of files it was split into; each file processed without merge/split & what its new version is called.
+    for k, group in group_by_dim.items():
+        print(
+            f"Group {k}: cfized files "
+            f"{[op.basename(path) for path in group.filepaths]} into "
+            f"{[op.join(op.basename(target_dir), op.basename(path)) for path in group.processed]}"
+        )
+        
+    
     # Garbage collection if required.
 
-    exit(0)
+    end_time = perf_counter()
+    print(f"Main app process {os.getpid()} took {end_time - start_time} seconds")
+
+    sys.exit(0)
 
 
 if __name__ == '__main__': main()

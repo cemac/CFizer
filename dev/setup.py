@@ -4,7 +4,6 @@ TODO: throw verbose errors if config file not found; if vocabulary file or dict 
 Name:           cfizer.py
 Author:         Cameron Wilson, CEMAC, University of Leeds
 Date:           August 2023
-File Revision:  ...
 CFizer Version: See __version__
 
 '''
@@ -16,6 +15,21 @@ import numpy as np
 # from utils import vocab_from_xls
 
 # WILDCARDS = {'*', '?'}
+
+COMPRESSION = (True, 'zlib', 2) # True/False, compression type, complevel (1:9)
+    # See https://unidata.github.io/netcdf4-python/efficient-compression-of-netcdf-variables
+'''
+Only lossless compression is considered here; all precision is maintained.
+WARNING: only tested with zlib compression.
+'''
+if COMPRESSION[0]:
+    if COMPRESSION[2] < 1 or COMPRESSION[2] > 9:
+        raise ValueError("Only compression levels from 1 to 9 are valid.")
+    if COMPRESSION[1] not in {
+        'zlib', 'szip', 'zstd', 'bzip2', 'blosc_lz', 'blosc_lz4', 
+        'blosc_lz4hc', 'blosc_zlib', 'blosc_zstd'
+    }:
+        raise ValueError("Invalid compression algorithm specified.")
 
 CF_VERSION = '1.10'
 
@@ -53,7 +67,7 @@ FROM_INPUT_FILE = {
     'reftime': 'time'
 }
 
-CHUNKING_DIMS = {'z': 4, 'zn':4}  # Ideally chunk sizes should be power of 2.
+CHUNKING_DIMS = {'z': 2, 'zn':2}  # Ideally chunk sizes should be power of 2.
 
 DEFAULT_CALENDAR = 'proleptic_gregorian'  # As per ISO 8601:2004.
 
@@ -170,7 +184,6 @@ for dim, group in vocabulary.items():
             reference_vars[attributes['reference_variable']] = {
                 'for': (dim, variable)
             }
-
 
 # If any variables are perturbations that the user wants to convert to
 # an absolute quantity, by adding a reference variable, track where to

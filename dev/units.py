@@ -1,4 +1,31 @@
 from cfunits import Units
+import re
+
+
+def format_units(units: Units|str) -> str:
+    '''
+    cfunits.Units.formatted() reorders component units weirdly.
+    This formatter preserves the original ordering, but makes units look more
+    CF-like.
+    It also preserves ratios in their original form, e.g. 'kg kg-1' instead of 
+    '1'.
+    '''
+
+    if isinstance(units, Units):
+        units = units.units
+
+    frac = units.split('/')
+    unit_list = [u.replace('^', '') for u in re.split('[ .]', frac[0])]
+    
+    if len(frac) > 1:
+        for denom in frac[1:]:
+            for u in re.split('[ .]', denom):
+                if '^' in u:
+                    unit_list.append('-'.join(u.split('^')))
+                else:
+                    unit_list.append(f'{u}-1')
+    
+    return ' '.join(unit_list)
 
 
 class TimeUnits(Units):

@@ -1,9 +1,9 @@
-import re
+# import re
 from time import perf_counter
-from datetime import timedelta, datetime
-from cfunits import Units
+# from datetime import timedelta, datetime
+# from cfunits import Units
 import os
-from difflib import SequenceMatcher
+# from difflib import SequenceMatcher
 import numpy as np
 
 
@@ -13,7 +13,7 @@ def performance_time(func):
 		response = func(*args, **kwargs)  # run the wrapped function
 		end_time = perf_counter()
 		duration = end_time - start_time
-		print(f"{func} took {duration} seconds.")  # ({args}, {kwargs})
+		print(f"{func} on process {os.getpid()} took {duration} seconds.")  # ({args}, {kwargs})
 		return response
 	return wrapper
 
@@ -38,24 +38,24 @@ def vocab_from_xls(filepath: str) -> dict:
     return VOCABULARY
 
 
-def options_db_to_global_attrs():
-    pass
+# def options_db_to_global_attrs():
+#     pass
 
 
-def is_sequence(object):
-    return isinstance(object, (
-        list,
-        set,
-        tuple,
-        range
-    ))
+# def is_sequence(object):
+#     return isinstance(object, (
+#         list,
+#         set,
+#         tuple,
+#         range
+#     ))
 
 
-def is_sequence_of(object, type: type):
-    if is_sequence(object):
-        return all([isinstance(element, type) for element in object])
-    else:
-        return False
+# def is_sequence_of(object, type: type):
+#     if is_sequence(object):
+#         return all([isinstance(element, type) for element in object])
+#     else:
+#         return False
 
 
 def type_from_str(string: str):
@@ -97,65 +97,65 @@ def type_from_str(string: str):
                 return np.double(string)  # floating point, whether integer or not
 
 
-def decode_time_units(units: str) -> tuple:
-    try:
-        (unit, ref_datetime) = units.lower().split(' since ')
-    except AttributeError or ValueError:
-        raise ValueError('''Argument must be a string in the format:
-                        <time-unit> since <time-origin>,
-                         with <time-origin> in ISO format.''')
+# def decode_time_units(units: str) -> tuple:
+#     try:
+#         (unit, ref_datetime) = units.lower().split(' since ')
+#     except AttributeError or ValueError:
+#         raise ValueError('''Argument must be a string in the format:
+#                         <time-unit> since <time-origin>,
+#                          with <time-origin> in ISO format.''')
     
-    try:
-        dt = datetime.fromisoformat(ref_datetime)
-    except:
-        raise ValueError('Origin date-time must be in ISO format.')
+#     try:
+#         dt = datetime.fromisoformat(ref_datetime)
+#     except:
+#         raise ValueError('Origin date-time must be in ISO format.')
     
-    return (unit, dt)
+#     return (unit, dt)
 
 
-def timedelta_from_units(number: float|int, unit: str) -> timedelta:
+# def timedelta_from_units(number: float|int, unit: str) -> timedelta:
     
-    try:
-        float(number)
-    except ValueError:
-        raise TypeError('First argument must be numeric')
+#     try:
+#         float(number)
+#     except ValueError:
+#         raise TypeError('First argument must be numeric')
 
-    time_units = dict(
-        days=0,
-        seconds=0, 
-        microseconds=0, 
-        milliseconds=0, 
-        minutes=0, 
-        hours=0, 
-        weeks=0
-    )
+#     time_units = dict(
+#         days=0,
+#         seconds=0, 
+#         microseconds=0, 
+#         milliseconds=0, 
+#         minutes=0, 
+#         hours=0, 
+#         weeks=0
+#     )
 
-    if unit not in time_units:
-        raise KeyError('Invalid unit supplied')
+#     if unit not in time_units:
+#         raise KeyError('Invalid unit supplied')
     
-    time_units[unit] = number
+#     time_units[unit] = number
 
-    return timedelta(
-        days=time_units['days'],
-        seconds=time_units['seconds'],
-        microseconds=time_units['microseconds'],
-        milliseconds=time_units['milliseconds'],
-        minutes=time_units['minutes'],
-        hours=time_units['hours'],
-        weeks=time_units['weeks']
-    )
+#     return timedelta(
+#         days=time_units['days'],
+#         seconds=time_units['seconds'],
+#         microseconds=time_units['microseconds'],
+#         milliseconds=time_units['milliseconds'],
+#         minutes=time_units['minutes'],
+#         hours=time_units['hours'],
+#         weeks=time_units['weeks']
+#     )
 
-def datetime_from_relative_units(number: float|int, units: str) -> datetime:
+# def datetime_from_relative_units(number: float|int, units: str) -> datetime:
     
-    try:
-        (unit, ref_datetime) = decode_time_units(units)
-    except TypeError:
-        raise TypeError('''Second argument must be a string in the format:
-                        [time unit] since [date or date-time in ISO format]''')
+#     try:
+#         (unit, ref_datetime) = decode_time_units(units)
+#     except TypeError:
+#         raise TypeError('''Second argument must be a string in the format:
+#                         [time unit] since [date or date-time in ISO format]''')
 
-    delta = timedelta_from_units(number, unit)
+#     delta = timedelta_from_units(number, unit)
 
-    return ref_datetime + delta
+#     return ref_datetime + delta
 
 
 def generate_coords(number: int, 
@@ -166,59 +166,19 @@ def generate_coords(number: int,
     return np.arange(first, number, 1, dtype=data_type) * spacing
 
 
-def stem_str(*args):
-        if not args:
-            raise ValueError('At least one string must be provided.')
-        if None in args:
-            return stem_str(*[arg for arg in args if arg is not None])
-        filenames = [os.path.splitext(os.path.basename(path))[0] for path in args]  # If each path contains only a filename (no extension) this will still work.
-        stem = filenames[0]
-        if len(args) > 1:
-            for f in filenames[1:]:
-                match = SequenceMatcher(a=stem, b=f).find_longest_match()
-                stem = stem[match.a: match.a + match.size]
-        return stem
+# def stem_str(*args):
+#         if not args:
+#             raise ValueError('At least one string must be provided.')
+#         if None in args:
+#             return stem_str(*[arg for arg in args if arg is not None])
+#         filenames = [os.path.splitext(os.path.basename(path))[0] for path in args]  # If each path contains only a filename (no extension) this will still work.
+#         stem = filenames[0]
+#         if len(args) > 1:
+#             for f in filenames[1:]:
+#                 match = SequenceMatcher(a=stem, b=f).find_longest_match()
+#                 stem = stem[match.a: match.a + match.size]
+#         return stem
     
-
-def format_units(units: Units|str) -> str:
-    '''
-    cfunits.Units.formatted() reorders component units weirdly.
-    This formatter preserves the original ordering, but makes units look more
-    CF-like.
-    It also preserves ratios in their original form, e.g. 'kg kg-1' instead of 
-    '1'.
-    '''
-
-    if isinstance(units, Units):
-        units = units.units
-
-    frac = units.split('/')
-    unit_list = [u.replace('^', '') for u in re.split('[ .]', frac[0])]
-    
-    if len(frac) > 1:
-        for denom in frac[1:]:
-            for u in re.split('[ .]', denom):
-                if '^' in u:
-                    unit_list.append('-'.join(u.split('^')))
-                else:
-                    unit_list.append(f'{u}-1')
-    
-    return ' '.join(unit_list)
-
-
-if __name__ == '__main__':
-    # value = 315960.
-    # units = 'seconds since 2020-01-25'
-    # decoded_units = decode_time_units(units)
-    # print('decode_time_units:', decoded_units)
-    # print('timedelta_from_units:', timedelta_from_units(value, decoded_units[0]))
-    # print('datetime_from_relative_units:', datetime_from_relative_units(value, units))
-    # print(f'stem_str("spam", None): {stem_str("spam", None)}')
-    print('kg/m^2 =', format_units('kg/m^2'))
-    print('kg/m^2/s =', format_units('kg/m^2/s'))
-    print('kg m/s^2 =', format_units('kg m/s^2'))
-    print('kg/kg =', format_units('kg/kg'))
-
 
 def tf(string) -> bool:
     '''
@@ -229,3 +189,17 @@ def tf(string) -> bool:
     return True if string.lower() in {
         'true', 'yes', 't', 'y', '1'
     } else False
+
+
+# if __name__ == '__main__':
+    # value = 315960.
+    # units = 'seconds since 2020-01-25'
+    # decoded_units = decode_time_units(units)
+    # print('decode_time_units:', decoded_units)
+    # print('timedelta_from_units:', timedelta_from_units(value, decoded_units[0]))
+    # print('datetime_from_relative_units:', datetime_from_relative_units(value, units))
+    # print(f'stem_str("spam", None): {stem_str("spam", None)}')
+    # print('kg/m^2 =', format_units('kg/m^2'))
+    # print('kg/m^2/s =', format_units('kg/m^2/s'))
+    # print('kg m/s^2 =', format_units('kg m/s^2'))
+    # print('kg/kg =', format_units('kg/kg'))

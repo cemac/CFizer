@@ -185,17 +185,23 @@ class DsGroup:
             # check each DsGroup has only one dataset in its processed 
             # attribute.
             if not all([
-                isinstance(g.processed, str) and g.processed[-3:] == '.nc' 
+                (isinstance(g.processed, list) and 
+                len(g.processed) == 1 and 
+                g.processed[0][-3:] == '.nc')
                 for g in groups
             ]):
                 raise TypeError('DsGroup: To merge DsGroup objects, the '
                                 'processed attribute of each must contain a '
-                                'single string containing a NetCDF file path.')
+                                'list whose single element is a string '
+                                'containing a NetCDF file path.')
             
-            self.filepaths = [g.processed for g in groups]
+            self.filepaths = [g.processed[0] for g in groups]
             
             # Open each group.processed as xr.Dataset
             try:
+                print(
+                    f"Process {os.getpid()}: DsGroup: opening datasets {[op.basename(path) for path in self.filepaths]}."
+                )
                 self.to_process = [
                     xr.open_dataset(path, decode_times=False) 
                     for path in self.filepaths
@@ -346,7 +352,7 @@ class DsGroup:
 
         # from cfize_ds import cfize_dataset  # To avoid circular imports
         # global vocabulary
-        print(f"Process {os.getpid()}: Merging time series in group {self.n_dims}:{self.name}.")
+        print(f"Process {os.getpid()}: Merging time series in group {self.n_dims}:{self.name}, containing datasets {[op.basename(path) for path in self.filepaths]}.")
 
         hold_attrs = {}  # Global attributes to be set once for merged group.
         # time_var = {}
@@ -455,7 +461,7 @@ class DsGroup:
         (yyyy-mm-dd[[T]hh:mm:ss])
         """
 
-        print(f"Process {os.getpid()}: merging groups - {self.name} with {self.n_dims} dimensions.")
+        print(f"Process {os.getpid()}: merging groups - {self.name} with {self.n_dims} dimensions, containing {[op.basename(path) for path in self.filepaths]}.")
         
 
         if self.action != 'merge_groups':
@@ -544,7 +550,8 @@ class DsGroup:
         # Close dataset
         merged.close()
 
-        self.processed = filepath
+        self.processed = [filepath]
+        return self.processed
         
     def cf_only(self, 
                 time_units: TimeUnits, 
@@ -559,12 +566,16 @@ class DsGroup:
         
     
     def cfize_and_save(self, 
-                       target_dir: str, 
-                       time_units: TimeUnits,
-                       vocab: dict
+                       shared: dict
                        ):
         
         print(f"Process {os.getpid()}: cfizing & saving datasets in group {self.name} with {self.n_dims} dimensions.")
+
+        update_globals = {}
+
+        target_dir = shared['target_dir']
+        # time_units = shared['time_units']
+        # vocab = shared['vocabulary']
 
         # global reference_vars  # Allow reference_vars to be updated.
         self.processed = []
@@ -578,14 +589,13 @@ class DsGroup:
             # Set up MoncDs object for further processing
             ds = MoncDs(
                 dataset=dataset,
-                time_units=time_units,
                 time_variable=self.time_var,
                 n_dims=self.n_dims,
                 title=dataset.attrs['title']
             )
             
             # Call CF compliance function on dataset.
-            cf_ds = ds.cfize(vocab=vocab)  # xarray.Dataset
+            cf_ds = ds.cfize(shared=shared)  # xarray.Dataset
 
             # Check whether time variable name has changed
             self.time_var = ds.time_var # Update group's time_var to match 
@@ -602,31 +612,66 @@ class DsGroup:
             #     if v in cf_ds.variables
             # ]
             [
-                vocab[reference_vars[v]['for'][0]][reference_vars[v]['for'][1]].update({'ref_array': cf_ds[v]})
+                shared['vocabulary'][reference_vars[v]['for'][0]][reference_vars[v]['for'][1]].update({'ref_array': cf_ds[v]})
                 for v in reference_vars.keys()
                 if v in cf_ds.variables
             ]
+            for v in reference_vars.keys():
+                if v in cf_ds.variables:
+                    [perturbation_dim, 
+                     perturbation_var] = reference_vars[v]['for']
+                    add_to_var = {'ref_array': cf_ds[v]}
+                    if 'vocabulary' in update_globals:
+                        if perturbation_dim in update_globals['vocabulary']:
+                            update_globals['vocabulary'][perturbation_dim].update({perturbation_var: add_to_var})
+                        else:
+                            update_globals['vocabulary'].update({
+                                perturbation_dim: {perturbation_var: add_to_var}
+                            })
+                    else:
+                        update_globals['vocabulary'] = {
+                            perturbation_dim: {perturbation_var: add_to_var}
+                        }
             
-            # [vocabulary[loc_dict['dim']][ref_var] for ref_var, loc_dict in reference_vars.items()]
-
             # Set encoding
-            # TODO: encoding needs to be set, with each variable's encoding 
+            # Encoding needs to be set, with each variable's encoding 
             # specified. Otherwise, _FillValue is applied to all, including 
             # coordinates, the latter contravening CF Conventions.
+            # encodings = {
+            #     k:{
+            #         'dtype': v.dtype,
+            #         '_FillValue': None
+            #     } for k, v in cf_ds.variables.items()
+            # }  # if k == 'options_database' or k in ds.ds.coords
             encodings = {
-                k:{
-                    'dtype': v.dtype,
-                    '_FillValue': None
-                } for k, v in cf_ds.variables.items()
-            }  # if k == 'options_database' or k in ds.ds.coords
+            k:{
+                'dtype': v.dtype,
+                '_FillValue': None,
+                COMPRESSION[1]: COMPRESSION[0],
+                'complevel': COMPRESSION[2]
+            } for k, v in cf_ds.variables.items()
+        } if COMPRESSION[0] else {
+            k:{
+                'dtype': v.dtype,
+                '_FillValue': None
+            } for k, v in cf_ds.variables.items()
+        }  # if k == 'options_database' or k in ds.ds.coords
 
             # Save dataset to NetCDF
             # xarray docs report engine='h5netcdf' may sometimes be 
             # faster. However, it doesn't natively handle the 
             # various string length types used here.
-            cf_ds.to_netcdf(
-                path=filepath, 
-                encoding=encodings)  # , engine='h5netcdf'
+            if COMPRESSION[0]:
+                cf_ds.to_netcdf(
+                    path=filepath, 
+                    encoding=encodings,
+                    engine='netcdf4',
+                    format='netCDF4'
+                )
+            else:
+                cf_ds.to_netcdf(
+                    path=filepath, 
+                    encoding=encodings)  # , engine='h5netcdf'
 
             # TODO: Run each file through cf-checker?
             
@@ -635,8 +680,8 @@ class DsGroup:
 
             self.processed.append(filepath)
 
-        if len(self.processed) == 1:
-            self.processed = self.processed[0]
+        # if len(self.processed) == 1:
+        #     self.processed = self.processed[0]
 
-        # return vocab
+        return update_globals
     
