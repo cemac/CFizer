@@ -161,7 +161,10 @@ def process_large(
     # TODO: Run CF checker on output files
     
 
-    return (group.processed, update_globals)
+    return (
+        {'processed': group.processed, 'time_var': group.time_var},
+        update_globals
+    )
     # return (group, shared)
 
 
@@ -180,7 +183,10 @@ def cf_merge(group: DsGroup,
     
     group.merge_times()
     update_globals = group.cfize_and_save(shared=shared)
-    return (group.processed, update_globals)
+    return (
+        {'processed': group.processed, 'time_var': group.time_var}, 
+        update_globals
+    )
 
 
 def process_parallel(
@@ -244,11 +250,12 @@ def process_parallel(
                 # are available for perturbations.
                 for d in {v['dim'] for v in reference_vars.values()}:
                     for r in results[d]:
-                        processed, update_globals = r.get()
+                        update_group, update_globals = r.get()
                         if groups[d].processed:
-                            groups[d].processed += processed
+                            groups[d].processed += update_group['processed']
                         else:
-                            groups[d].processed = processed
+                            groups[d].processed = update_group['processed']
+                        groups[d].time_var = update_group['time_var']
                         if update_globals:
                             if 'vocabulary' in update_globals:
                                 [[shared['vocabulary'][v_dim][update_var].update(update_dict) for update_var, update_dict in updates.items()] for v_dim, updates in update_globals['vocabulary'].items()]
@@ -295,20 +302,30 @@ def process_parallel(
                 #     ] for filepath in for_controller
                 # ]
                 for filepath in for_controller:
+                    [update_group, 
+                     update_globals] = process_large(
+                        filepath=filepath,
+                        group=group,
+                        title=title,
+                        shared=shared
+                    )
                     if groups[dim].processed:
-                        groups[dim].processed += process_large(
-                                filepath=filepath,
-                                group=group,
-                                title=title,
-                                shared=shared
-                            )[0]
+                        groups[dim].processed += update_group['processed']
+                        # process_large(
+                            #     filepath=filepath,
+                            #     group=group,
+                            #     title=title,
+                            #     shared=shared
+                            # )[0]
                     else:
-                        groups[dim].processed = process_large(
-                                filepath=filepath,
-                                group=group,
-                                title=title,
-                                shared=shared
-                            )[0]
+                        groups[dim].processed = update_group['processed']
+                        # process_large(
+                        #         filepath=filepath,
+                        #         group=group,
+                        #         title=title,
+                        #         shared=shared
+                        #     )[0]
+                    groups[dim].time_var = update_group['time_var'] 
                 
                 # Gather completed jobs
                 # TODO: is this efficient, or can it be done after merging 
@@ -318,10 +335,13 @@ def process_parallel(
                 # returned.
                 # [result.get() for result in results[dim]]
                 for result in results[dim]:
+                    [update_group, 
+                     update_globals] = result.get()
                     if groups[dim].processed:
-                        groups[dim].processed += result.get()[0]
+                        groups[dim].processed += update_group['processed']
                     else:
-                        groups[dim].processed = result.get()[0]
+                        groups[dim].processed = update_group['processed']
+                    groups[dim].time_var = update_group['time_var']
 
             # If group is to be merged:
             elif group.action == 'merge':
@@ -374,7 +394,10 @@ def process_parallel(
             if not groups[dim].processed:
                 groups[dim].processed = []
                 for result in results[dim]:
-                    groups[dim].processed += result.get()[0]
+                    [update_group, 
+                     update_globals] = result.get()
+                    groups[dim].processed += update_group['processed']
+                    groups[dim].time_var = update_group['time_var']
                 # [groups.update({dim: result.get()[0]}) for result in results[dim]]
                 # groups[dim].processed = [
                 #     result.get() for result in results[dim]
@@ -391,7 +414,8 @@ def cfize_all_datasets(
     Should print & return names of saved files
     TODO: This function still to be written tested.
     '''
-
+    
+    update_globals = {}
 #     print(f"Processing {group.n_dims}:{group.name}.")
 
 #     files = []
@@ -452,7 +476,10 @@ def cfize_all_datasets(
 
 #         files.append(filepath)
 
-#     return files
+    return (
+        {'processed': group.processed, 'time_var': group.time_var}, 
+        update_globals
+    )
 
 
 def process_serial(
@@ -828,9 +855,10 @@ def main():
     # Output list of actions taken: each list of merged files & what file they were merged into; each split file and list of files it was split into; each file processed without merge/split & what its new version is called.
     for k, group in group_by_dim.items():
         print(
-            f"Group {k}: cfized files "
-            f"{[op.basename(path) for path in group.filepaths]} into "
-            f"{[op.join(op.basename(target_dir), op.basename(path)) for path in group.processed]}"
+            f"Group {k}: source files "
+            f"{[op.basename(path) for path in group.filepaths]} --> "
+            f"{group.action + ' --> ' if group.action else ''}cfize --> "
+            f"{[op.basename(path) for path in group.processed]}"
         )
         
     
