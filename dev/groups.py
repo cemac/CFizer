@@ -167,6 +167,7 @@ class DsGroup:
     Each file in a DsGroup has the same variables, coordinates & dimensions.
     '''
     def __init__(self, 
+                 shared: dict,
                  name: str = '', 
                  n_dims: int = None,
                  time_variable: str = '',
@@ -199,7 +200,7 @@ class DsGroup:
             
             # Open each group.processed as xr.Dataset
             try:
-                print(
+                if shared['verbose']: print(
                     f"Process {os.getpid()}: DsGroup: opening datasets {[op.basename(path) for path in self.filepaths]}."
                 )
                 self.to_process = [
@@ -345,14 +346,14 @@ class DsGroup:
             # TODO: confirm time variable in new dataset matches self.time_var
             pass
 
-    def merge_times(self) -> None:
+    def merge_times(self, shared: dict) -> None:
         '''
         Should print & return name of saved file(s)
         '''
 
         # from cfize_ds import cfize_dataset  # To avoid circular imports
         # global vocabulary
-        print(f"Process {os.getpid()}: Merging time series in group {self.n_dims}:{self.name}, containing datasets {[op.basename(path) for path in self.filepaths]}.")
+        if shared['verbose']: print(f"Process {os.getpid()}: Merging time series in group {self.n_dims}:{self.name}, containing datasets {[op.basename(path) for path in self.filepaths]}.")
 
         hold_attrs = {}  # Global attributes to be set once for merged group.
         # time_var = {}
@@ -454,14 +455,14 @@ class DsGroup:
         # merged.attrs.update({'title': self.stem.strip('_ ') + self.n_dims if f'{self.n_dims}d' not in self.stem else self.stem.strip('_ ')})
         self.to_process.attrs['title'] = self.stem.strip('_ ') + self.n_dims if f'{self.n_dims}d' not in self.stem else self.stem.strip('_ ')
 
-    def merge_groups(self, target_dir: str) -> None:
+    def merge_groups(self, shared: dict) -> None:
         """
         This function assumes the member subgroups have already been 'CFized'.
         That means any date(time) attributes will be expected in ISO format
         (yyyy-mm-dd[[T]hh:mm:ss])
         """
-
-        print(f"Process {os.getpid()}: merging groups - {self.name} with {self.n_dims} dimensions, containing {[op.basename(path) for path in self.filepaths]}.")
+        
+        if shared['verbose']: print(f"Process {os.getpid()}: merging groups - {self.name} with {self.n_dims} dimensions, containing {[op.basename(path) for path in self.filepaths]}.")
         
 
         if self.action != 'merge_groups':
@@ -510,6 +511,7 @@ class DsGroup:
         
         # Close source datasets
         [ds.close() for ds in self.to_process]
+        self.to_process = []
 
         # Apply 'once per group' attributes back to resulting dataset.
         # Convert any datetime objects to strings, so xarray.Dataset.to_netcdf 
@@ -524,7 +526,7 @@ class DsGroup:
         merged.attrs['title'] = self.name
         
         # Set filepath and save as processed
-        filepath = op.join(target_dir, f"{merged.attrs['title']}.nc")
+        filepath = op.join(shared['target_dir'], f"{merged.attrs['title']}.nc")
 
         # Set encoding
         # TODO: encoding needs to be set, with each variable's encoding 
@@ -554,22 +556,21 @@ class DsGroup:
         return self.processed
         
     def cf_only(self, 
-                time_units: TimeUnits, 
-                target_dir: str):
+                shared: dict):
         '''
         TODO: This function still to be tested.
         '''
-        print(f"Processing {group.n_dims}:{group.name}.")
+        if shared['verbose']: print(f"Processing {group.n_dims}:{group.name}.")
 
         # self.to_process = list(self.datasets())  # Open all datasets in group.
-        self.cfize_and_save(target_dir=target_dir, time_units=time_units)
+        self.cfize_and_save(shared=shared)
         
     
     def cfize_and_save(self, 
                        shared: dict
                        ):
         
-        print(f"Process {os.getpid()}: cfizing & saving datasets in group {self.name} with {self.n_dims} dimensions.")
+        if shared['verbose']: print(f"Process {os.getpid()}: cfizing & saving datasets in group {self.name} with {self.n_dims} dimensions.")
 
         update_globals = {}
 

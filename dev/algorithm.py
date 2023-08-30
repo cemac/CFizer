@@ -42,7 +42,7 @@ def process_large(
 
     group.processed = []
 
-    print(f"process_large running on process {os.getpid()}: group {group.name} - file {op.basename(filepath)}")
+    if shared['verbose']: print(f"process_large running on process {os.getpid()}: group {group.name} - file {op.basename(filepath)}")
     
     with xr.open_dataset(filepath, 
                          decode_times=False
@@ -94,7 +94,8 @@ def process_large(
             # Split dataset by time-point, yielding multiple 
             # new datasets.
             processed = split_ds(dataset=monc_ds.ds, 
-                                var=monc_ds.time_var)
+                                var=monc_ds.time_var,
+                                shared=shared)
             # processed only ever needs to hold latest collection of datasets.
         else:
             processed = monc_ds.ds  # Will this persist after context of ds ends?
@@ -146,7 +147,10 @@ def process_large(
         #             encodings=encodings)
         # else:
         # Test dask version
-        print(f"Preparing delayed writer for {filepath} on process {os.getpid()}.")
+        if shared['verbose']: print(
+            f"Process {os.getpid()}: preparing delayed writer for "
+            f"{filepath}."
+        )
         writers.append(ds_to_nc_dask(ds=ds,
                                 filepath=filepath,
                                 encodings=encodings,
@@ -155,7 +159,7 @@ def process_large(
         ds.close()
         group.processed.append(filepath)
 
-    print(f"Computing writes on process {os.getpid()}.")
+    if shared['verbose']: print(f"Process {os.getpid()}: Computing writes.")
     [perform_write(writer) for writer in writers]
     
     # TODO: Run CF checker on output files
@@ -171,7 +175,7 @@ def process_large(
 def cf_merge(group: DsGroup, 
              shared: dict) -> str:
     
-    print(f"cf_merge running on process {os.getpid()}: group {group.name}")
+    if shared['verbose']: print(f"cf_merge running on process {os.getpid()}: group {group.name}")
     # target_dir = shared['target_dir']
     # time_units = shared['time_units']
     # reference_vars = shared['reference_vars']
@@ -181,7 +185,7 @@ def cf_merge(group: DsGroup,
     #     reference_vars = global_vars['reference_vars']
     #     vocabulary = global_vars['vocabulary']
     
-    group.merge_times()
+    group.merge_times(shared=shared)
     update_globals = group.cfize_and_save(shared=shared)
     return (
         {'processed': group.processed, 'time_var': group.time_var}, 
@@ -235,7 +239,7 @@ def process_parallel(
         '''
         for dim in sorted(list(groups.keys())):
             group = groups[dim]
-            print(f"Parallel processing {dim}:{group.name}.")
+            if shared['verbose']: print(f"Parallel processing {dim}:{group.name}.")
             
             if group.action == 'split' or dim == 3:
                 # The 2nd condition ensures that large files are allocated to
@@ -512,7 +516,7 @@ def process_serial(
     '''
     for dim in sorted(list(groups.keys())):
         group = groups[dim]
-        print(f"Serial processing {dim}:{group.name}.")
+        if shared['verbose']: print(f"Serial processing {dim}:{group.name}.")
         
         if group.action == 'split':
             
@@ -549,7 +553,7 @@ def process_serial(
             # )
 
 
-def sort_nc(directory) -> [dict, list]:
+def sort_nc(directory, shared: dict) -> [dict, list]:
     '''
     Sorts into MONC output files and other NC files, the latter listed as
     possible input files.
@@ -560,12 +564,12 @@ def sort_nc(directory) -> [dict, list]:
     It would be best if all files of a given run were in one directory, 
     rather than split between 0-2d and 3d.
     '''
-    print('Categorising files by dimension')
+    if verbose: print('Categorising files by dimension')
 
-    global vocabulary, reference_vars
+    # global vocabulary, reference_vars
 
     by_dim = {n_dim: DsGroup(
-        name=group, n_dims=n_dim, action=DIM_ACTIONS[group]
+        name=group, n_dims=n_dim, action=DIM_ACTIONS[group], shared=shared
     ) for n_dim, group in DIM_GROUPS.items()}
 
     input_files = []
@@ -710,18 +714,42 @@ def parse_arguments():
         help='Set to True if multiple dimension sets are being merged, but you want to keep the single-dimension-set files as well.',
         required=False
     )
+
+    parser.add_argument(
+        '--verbose', '-v',
+        dest='verbose',
+        type=tf,
+        choices=(True, False),
+        default=False,
+        help='Set to True to report all progress to stdout.',
+        required=False
+    )
+
+    parser.add_argument(
+        '--quiet', '-q',
+        dest='quiet',
+        type=tf,
+        choices=(True, False),
+        default=False,
+        help='Set to True to suppress warnings being printed to stdout.',
+        required=False
+    )
+
     return parser.parse_args()
 
 def main():
     start_time = perf_counter()  # wrapping in performance counter doesn't work, presumably because of multiprocessing.
 
-    print(f"Main app process id: {os.getpid()}")  # , started {start_time}
-
-    global vocabulary
-    
     # get command line arguments
     args = parse_arguments()
     
+    global quiet, verbose, vocabulary
+    quiet = args.quiet
+    verbose = args.verbose
+
+    if verbose: print(f"Main app process id: {os.getpid()}")  # , started {start_time}
+
+
     # Validate supplied directory to parse.
     if not op.exists(args.source_dir):
         raise OSError(f'Source directory {op.abspath(source_dir)} not found.')
@@ -788,8 +816,15 @@ def main():
         # TODO: check os.cpu_count() works correctly on JASMIN, when mutliple
         # cores are allocated.
     
+    shared = {
+        'target_dir': target_dir,
+        'verbose': verbose,
+        'quiet': quiet
+    }   # These are global variables (not constants), but must be passed 
+        # explicitly to any functions that may run on a separate process.
+
     # Parse directory & categorise NC files by type and dimensions
-    [group_by_dim, input_files] = sort_nc(source_dir)
+    [group_by_dim, input_files] = sort_nc(source_dir, shared=shared)
     
     # ID time variable of each group from VOCAB.
     
@@ -797,19 +832,18 @@ def main():
     # Assume time units will be common to all datasets in directory.
     if not time_units:
         time_units = time_units_from_input(input_files) if input_files else None
-        print('Time units:', (time_units.formatted()))
+        if verbose: print('Time units:', (time_units.formatted()))
 
     # NOTE: by this stage, time_units should contain a valid reference date /
     # datetime and calendar. The base units will be set to the default 
     # 'seconds', but this will be overridden by any units found in time 
     # coordinate variable(s).
             
-    shared = {
-        'target_dir': target_dir,
+    shared.update({
         'time_units': time_units,
         'vocabulary': vocabulary,
         'reference_vars': reference_vars
-    }   # These are global variables (not constants), but must be passed 
+    })   # These are global variables (not constants), but must be passed 
         # explicitly to any functions that may run on a separate process.
     
     # For each dimension group:
@@ -839,11 +873,11 @@ def main():
     # For each set of dimension groups to be merged:
     for name, groups in groups_to_merge.items():
         # Create new group, comprising the groups to be merged.
-        merger = DsGroup(groups=groups)
+        merger = DsGroup(groups=groups, shared=shared)
         
         if merger.action == 'merge_groups':
             # Merge each group's resultant single dataset
-            merger.merge_groups(target_dir=target_dir)
+            merger.merge_groups(shared=shared)
             
         group_by_dim[re.split(merger.stem,merger.name)[1]] = merger
 
@@ -865,7 +899,7 @@ def main():
     # Garbage collection if required.
 
     end_time = perf_counter()
-    print(f"Main app process {os.getpid()} took {end_time - start_time} seconds")
+    if verbose: print(f"Main app process {os.getpid()} took {end_time - start_time} seconds")
 
     sys.exit(0)
 

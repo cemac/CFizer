@@ -13,7 +13,7 @@ def performance_time(func):
 		response = func(*args, **kwargs)  # run the wrapped function
 		end_time = perf_counter()
 		duration = end_time - start_time
-		print(f"{func} on process {os.getpid()} took {duration} seconds.")  # ({args}, {kwargs})
+		print(f"Process {os.getpid()}: {func} took {duration} seconds.")  # ({args}, {kwargs})
 		return response
 	return wrapper
 

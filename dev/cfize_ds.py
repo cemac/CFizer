@@ -18,15 +18,20 @@ def is_monc(dataset: xr.Dataset) -> bool:
     return MONC_ID_ATTR in set(dataset.attrs).union(set(dataset.variables))
 
 
-def split_ds(dataset: xr.Dataset, var: str = 'time') -> list[xr.Dataset]:
+def split_ds(dataset: xr.Dataset, shared: dict, var: str = 'time') -> list[xr.Dataset]:
     if var not in dataset.dims:
         raise AttributeError(f'split_ds: {var} not in dataset dimensions.')
-    print(f'Splitting dataset {dataset.attrs["title"]} by {var} on process {os.getpid()}.')
+    if shared['verbose']: print(
+        f'Process {os.getpid()}: splitting dataset {dataset.attrs["title"]} '
+        f'by {var}.'
+    )
     grouped = {v: ds for (v, ds) in dataset.groupby(var)}
     for k, v in grouped.items():
         # Append relevant coordinate value to title
         v.attrs['title'] = v.attrs['title'].strip('_ +,.&') + '_' + str(int(k))
-        print(f'Created new dataset with title, {v.attrs["title"]}')
+        if shared['verbose']: print(
+                f'Process {os.getpid()}: Created new dataset with title, '
+                f'{v.attrs["title"]}')
     split = list(grouped.values())
     return split
 
@@ -123,7 +128,7 @@ class MoncDs:
         processing.
         '''
 
-        print(f"Process {os.getpid()}: cfize running on MONC dataset {self.ds.attrs['title']} with {self.n_dims} spatial dimensions.")
+        if shared['verbose']: print(f"Process {os.getpid()}: cfize running on MONC dataset {self.ds.attrs['title']} with {self.n_dims} spatial dimensions.")
 
         # Pull required options_database info into dictionary
         self.get_options(
@@ -371,7 +376,7 @@ class MoncDs:
                         variables: list|set|tuple,
                         shared: dict):
         
-        print(f"Process {os.getpid()}: cfizing variables on MONC dataset {self.ds.attrs['title']} with {self.n_dims} spatial dimensions.")
+        if shared['verbose']: print(f"Process {os.getpid()}: cfizing variables on MONC dataset {self.ds.attrs['title']} with {self.n_dims} spatial dimensions.")
         
         # Process any coordinate variables first, as changes in these may affect
         # processing of data variables.
