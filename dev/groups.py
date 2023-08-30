@@ -40,13 +40,13 @@ def get_time_var(*args: int|xr.Dataset) -> str:
     # If argument is an integer, assume it's the number of spatial dimensions
     if isinstance(args[0], int):
         if args[0] not in vocabulary:
-            raise KeyError(
-                'get_time_var: Vocabulary file has no specifications for '
+            raise VocabError(
+                'Vocabulary file has no specifications for '
                 f'{args[0]} spatial dimensions.')
         time_vars = [v for v in vocabulary[args[0]].keys() 
                      if 'time' in v.lower()]
         if not time_vars:
-            raise KeyError('get_time_var: No time variable found in '
+            raise VocabError('No time variable found in '
                            f'vocabulary for {args[0]}d datasets.')
     elif isinstance(args[0], xr.Dataset):
         time_vars = [d for d in args[0].dims if 'time' in d.lower()]
@@ -112,14 +112,14 @@ def merge_dimensions(*args) -> xr.Dataset:
         return args[0].copy(deep=True)
     
     if len(args) == 2:
-        try:
-            new_ds = args[0].merge(
-                other=args[1], 
-                join='exact', 
-                combine_attrs='drop_conflicts'
-            )
-        except xr.MergeError as e:
-            raise e
+        # try:
+        new_ds = args[0].merge(
+            other=args[1], 
+            join='exact', 
+            combine_attrs='drop_conflicts'
+        )
+        # except xr.MergeError as e:
+        #     raise e
         return new_ds
     
     # call recursively until only 2 args to process
@@ -136,7 +136,10 @@ def globals_to_vars(ds: xr.Dataset,
         # Any advantage of name = global_attr.replace(' ', '_')?
 
         if global_attr not in ds.attrs:
-            raise AttributeError
+            raise ConfigError(
+                f"Global attribute {global_attr} specified in config.yml, "
+                f"but not found in attributes of dataset."
+            )
         
         if global_attr in do_not_propagate:
             # assign `np.nan` to each data point except last, and then 
@@ -148,16 +151,16 @@ def globals_to_vars(ds: xr.Dataset,
             data = [type_from_str(ds.attrs[global_attr])]*len(ds[group.time_var].data)
             coords = ds[group.time_var]
 
-        try:
-            vars[global_attr] = xr.DataArray(
-                name=global_attr,
-                data=data,
-                coords={time_var: coords},
-                dims=(time_var,),
-                attrs=var_attrs
-            )
-        except Exception as e:
-            raise e
+        # try:
+        vars[global_attr] = xr.DataArray(
+            name=global_attr,
+            data=data,
+            coords={time_var: coords},
+            dims=(time_var,),
+            attrs=var_attrs
+        )
+        # except Exception as e:
+        #     raise e
         
     return vars
 
@@ -215,8 +218,15 @@ class DsGroup:
             except Exception as e:
                 raise e
             
-            self.name = stem_str(*[group.name for group in groups])
-            self.stem = stem_str(*[g.stem for g in groups])
+            try:
+                self.name = stem_str(*[group.name for group in groups])
+                self.stem = stem_str(*[g.stem for g in groups])
+            except ValueError:
+                raise AttributeError(
+                    f"stem and/or name attribute(s) missing from member "
+                    f"group(s)."
+                )
+
             # Derive combined name from stem of each group's filename stem and 
             # name.
             self.name = self.stem.strip(' _') + '_' + self.name
@@ -255,11 +265,10 @@ class DsGroup:
             self.processed = None  # Filepath(s) of output
             self.stem = stem_str(*self.filepaths) if self.filepaths else None
 
-            # Although it would be best to verify that all member datasets have 
-            # the same time variable, for now, just use the first one.
+            # Try first to ID time variable from vocabulary
             try:
                 self.time_var = time_variable or get_time_var(self.n_dims)
-            except KeyError:
+            except VocabError:
                 if self.filepaths:
                     # Although it would be best to verify that all member 
                     # datasets have the same time variable, for now, just use 
@@ -269,8 +278,28 @@ class DsGroup:
                             xr.open_dataset(
                             self.filepaths[0], decode_times=False
                             ))
-                    except:
-                        self.time_var = None    # Search in datasets as files 
+                    except KeyError:
+                        print(
+                            f"No time coordinate variable found for group "
+                            f"{self.name} in vocabulary or first dataset. "
+                            f"Please select number in the following list, "
+                            f"corresponding to the correct variable. Enter 0 "
+                            f"to exit."
+                        )
+                        with xr.open_dataset(
+                            self.filepaths[0], decode_times=False
+                            ) as ds:
+                            print([f"[{i+1}] v\n" 
+                                   for i, v in enumerate(ds.dims)])
+                            while True:
+                                t = input()
+                                if isinstance(t, int) and 0 <= t <= len(ds.dims): 
+                                    break
+                            if t == 0:
+                                exit("No time coordinate variable specified/found.")
+                            self.time_var = list(ds.dims)[t - 1]
+                            
+                        # self.time_var = None    # Search in datasets as files 
                                                 # are added.
 
                     # TODO: verify all datasets in group have same time 
@@ -324,6 +353,23 @@ class DsGroup:
                 )
             except KeyError:
                 print(f'DsGroup.add: Time variable not found in {filepath}.')
+                print(
+                    f"Please select number in the following list, "
+                    f"corresponding to the correct variable. Enter 0 "
+                    f"to exit."
+                )
+                with xr.open_dataset(
+                    self.filepaths[0], decode_times=False
+                    ) as ds:
+                    print([f"[{i+1}] v\n" 
+                            for i, v in enumerate(ds.dims)])
+                    while True:
+                        t = input()
+                        if isinstance(t, int) and 0 <= t <= len(ds.dims): 
+                            break
+                    if t == 0:
+                        exit("No time coordinate variable specified/found.")
+                    self.time_var = list(ds.dims)[t - 1]
         # If time variable contains wildcards, seek matching variable in ds. If
         # found, update vocabulary accordingly.
         elif len({'*', '?'}.intersection(self.time_var)) > 0:
@@ -336,7 +382,7 @@ class DsGroup:
             if len(exact_time_var) != 1:
                 # TODO: disambiguation
                 raise AttributeError(
-                    'Multiple variables found in dataset that match time '
+                    f'Multiple variables found in dataset that match time '
                     f'variable pattern, {self.time_var}.')
             exact_time_var = exact_time_var[0]
             vocabulary[self.n_dims][exact_time_var] = vocabulary[self.n_dims][self.time_var]
@@ -383,8 +429,8 @@ class DsGroup:
                             time_var=self.time_var, 
                             last_time_point=last_time_point
                 )  # time_var[i]
-            except Exception as e:
-                raise e
+            except ConfigError as e:
+                return {'error': 'DsGroups.merge_times: globals_to_vars :' + str(e)}
             for name, array in new_vars.items():
                 ds.attrs.pop(name)
                 processing[i] = ds.assign({name: array})  # Need to assign to original dataset in list rather than placeholder ds.
@@ -422,7 +468,7 @@ class DsGroup:
                                     second=t[2]
                                 )
                     else:
-                        raise e
+                        return {'error': 'DsGroup.merge_times: group_attrs: ' + str(e)}
                 if attr in hold_attrs:
                     if value > hold_attrs[attr]:
                         hold_attrs[attr] = value
@@ -453,7 +499,9 @@ class DsGroup:
 
         # Derive title/filename from group's stem & dimension
         # merged.attrs.update({'title': self.stem.strip('_ ') + self.n_dims if f'{self.n_dims}d' not in self.stem else self.stem.strip('_ ')})
-        self.to_process.attrs['title'] = self.stem.strip('_ ') + self.n_dims if f'{self.n_dims}d' not in self.stem else self.stem.strip('_ ')
+        self.to_process.attrs['title'] = self.stem.strip('_ ') + str(self.n_dims) if f'{self.n_dims}d' not in self.stem else self.stem.strip('_ ')
+
+        return {'merged': self.to_process}
 
     def merge_groups(self, shared: dict) -> None:
         """
@@ -532,12 +580,25 @@ class DsGroup:
         # TODO: encoding needs to be set, with each variable's encoding 
         # specified. Otherwise, _FillValue is applied to all, including 
         # coordinates, the latter contravening CF Conventions.
+        # encodings = {
+        #     k:{
+        #         'dtype': v.dtype,
+        #         '_FillValue': None
+        #     } for k, v in merged.variables.items()
+        # }  # if k == 'options_database' or k in ds.ds.coords
         encodings = {
+            k:{
+                'dtype': v.dtype,
+                '_FillValue': None,
+                COMPRESSION[1]: COMPRESSION[0],
+                'complevel': COMPRESSION[2]
+            } for k, v in merged.variables.items()
+        } if COMPRESSION[0] else {
             k:{
                 'dtype': v.dtype,
                 '_FillValue': None
             } for k, v in merged.variables.items()
-        }  # if k == 'options_database' or k in ds.ds.coords
+        }
 
         # Save dataset to NetCDF
         # xarray docs report engine='h5netcdf' may sometimes be 
@@ -563,7 +624,7 @@ class DsGroup:
         if shared['verbose']: print(f"Processing {group.n_dims}:{group.name}.")
 
         # self.to_process = list(self.datasets())  # Open all datasets in group.
-        self.cfize_and_save(shared=shared)
+        return self.cfize_and_save(shared=shared)
         
     
     def cfize_and_save(self, 
@@ -573,6 +634,8 @@ class DsGroup:
         if shared['verbose']: print(f"Process {os.getpid()}: cfizing & saving datasets in group {self.name} with {self.n_dims} dimensions.")
 
         update_globals = {}
+        errors = []
+        warnings = []
 
         target_dir = shared['target_dir']
         # time_units = shared['time_units']
@@ -588,15 +651,29 @@ class DsGroup:
 
         for dataset in self.to_process:
             # Set up MoncDs object for further processing
-            ds = MoncDs(
-                dataset=dataset,
-                time_variable=self.time_var,
-                n_dims=self.n_dims,
-                title=dataset.attrs['title']
-            )
-            
+            try:
+                ds = MoncDs(
+                    dataset=dataset,
+                    time_variable=self.time_var,
+                    n_dims=self.n_dims,
+                    title=dataset.attrs['title']
+                )
+            except AttributeError as e:
+                errors.append(e)
+                return {
+                    'warnings': warnings,
+                    'errors': errors
+                }
             # Call CF compliance function on dataset.
-            cf_ds = ds.cfize(shared=shared)  # xarray.Dataset
+            try:
+                cf_ds = ds.cfize(shared=shared)  # xarray.Dataset
+            except (ConfigError or VocabError or AttributeError) as e:
+                errors.append(e)
+                return {
+                    'warnings': warnings,
+                    'errors': errors
+                }
+            warnings += cf_ds.warnings
 
             # Check whether time variable name has changed
             self.time_var = ds.time_var # Update group's time_var to match 
@@ -612,11 +689,11 @@ class DsGroup:
             #     for v in reference_vars.keys()
             #     if v in cf_ds.variables
             # ]
-            [
-                shared['vocabulary'][reference_vars[v]['for'][0]][reference_vars[v]['for'][1]].update({'ref_array': cf_ds[v]})
-                for v in reference_vars.keys()
-                if v in cf_ds.variables
-            ]
+            # [
+            #     shared['vocabulary'][reference_vars[v]['for'][0]][reference_vars[v]['for'][1]].update({'ref_array': cf_ds[v]})
+            #     for v in reference_vars.keys()
+            #     if v in cf_ds.variables
+            # ]
             for v in reference_vars.keys():
                 if v in cf_ds.variables:
                     [perturbation_dim, 
@@ -684,5 +761,13 @@ class DsGroup:
         # if len(self.processed) == 1:
         #     self.processed = self.processed[0]
 
-        return update_globals
-    
+        # return update_globals
+        return {
+            'update_group':{
+                'processed': group.processed, 
+                'time_var': group.time_var
+            },
+            'update_globals': update_globals,
+            'warnings': warnings,
+            'errors': errors
+        }

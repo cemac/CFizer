@@ -91,6 +91,7 @@ class MoncDs:
                  ) -> None:  # , group:DsGroup=None,
         
         
+        self.warnings = []
         self.ds = dataset
         # self.time_units = shared['time_units']
         # self.vocab = shared['vocabulary']
@@ -101,8 +102,8 @@ class MoncDs:
         #     self.time_var = group.time_var
         else:
             raise AttributeError(
-                "DsGroup: time variable must be specified via either of the "
-                "time_variable or group parameters."
+                "DsGroup: time variable must be specified via the "
+                "time_variable parameter."
             )
         
         if n_dims:
@@ -128,13 +129,18 @@ class MoncDs:
         processing.
         '''
 
-        if shared['verbose']: print(f"Process {os.getpid()}: cfize running on MONC dataset {self.ds.attrs['title']} with {self.n_dims} spatial dimensions.")
+        if shared['verbose']: 
+            print(
+                f"Process {os.getpid()}: cfize running on MONC dataset "
+                f"{self.ds.attrs['title']} with {self.n_dims} spatial "
+                f"dimensions."
+            )
 
         # Pull required options_database info into dictionary
         self.get_options(
             fields=CONFIG['options_to_attrs']
         )
-
+        
         # Convert any required options_database pairs to attributes (with 
         # appropriate np.dtypes)
         self.ds.attrs.update(self.options_db)
@@ -142,10 +148,10 @@ class MoncDs:
         # Add global attributes recommended by CF (some values set at 
         # initialisation)
         self.add_cf_attrs()
-
+        
         # Add any missing coordinates
         self.missing_coords()
-
+        
         # update all (non-options-database) variables in either shared['vocabulary'][dim] or 
         # dataset:
         var_list = set(self.ds.variables)
@@ -206,7 +212,7 @@ class MoncDs:
                         else:
                             attributes[k.lower().replace(' ', '_')] = v if k != 'standard_name' else v.replace(' ', '_')
                 except KeyError:
-                    raise KeyError(
+                    raise ConfigError(
                         f"Processing {self.n_dims}d files: Parameters needed "
                         f"to set up {d} as coordinate variable are missing "
                         f"from config file, or required key not found in "
@@ -215,7 +221,7 @@ class MoncDs:
                         f"and attributes must be specified."
                     )
             else:
-                raise KeyError(
+                raise ConfigError(
                         f"Processing {self.n_dims}d files: Parameters needed "
                         f"to set up {d} as coordinate variable are missing "
                         f"from config file. "
@@ -257,9 +263,7 @@ class MoncDs:
                         'new_coordinate_variables'][var]['attributes'].items() 
                     if k not in updates
                 ]
-                # for k, v in CONFIG['new_coordinate_variables'][var]['attributes'].items():
-                #     if k not in updates:
-                #         updates[k] = v
+                
         if not updates or 'units' not in updates:
             # If no new unit, check existing is present & CF compliant:
             if 'units' in self.ds[var].attrs:
@@ -284,13 +288,13 @@ class MoncDs:
                         #     f"new units specified in vocabulary under "
                         #     f"dimension {self.n_dims}."
                         # )
-                        # raise ValueError(
-                        #     f"{self.ds[var].attrs['units']}: invalid units for "
-                        #     f"variable {var} in dataset "
-                        #     f"with title {self.ds.attrs['title']}, and no "
-                        #     f"new units specified in vocabulary under "
-                        #     f"dimension {self.n_dims}."
-                        # )
+                        raise VocabError(
+                            f"{self.ds[var].attrs['units']}: invalid units for "
+                            f"variable {var} in dataset "
+                            f"with title {self.ds.attrs['title']}, and no "
+                            f"new units specified in vocabulary under "
+                            f"dimension {self.n_dims}."
+                        )
             else:
                 # print(
                 #     f"No units specified for {var} in vocabulary "
@@ -317,7 +321,7 @@ class MoncDs:
                     calendar = time_units.calendar
                 self.ds[var].attrs['calendar'] = calendar
                 if not TimeUnits(units=updates['units']).isreftime:
-                    u = f"{updates['units']} since {time_units.reftime.isoformat()}"
+                    u = f"{updates['units']} since {time_units.reftime.isoformat(sep=' ')}"
                 new_units = TimeUnits(units=u, 
                                     calendar=calendar)
                 # Assign T to axis.
@@ -328,9 +332,9 @@ class MoncDs:
                 if Units(updates['units']).isvalid:
                     new_units = Units(updates['units'])
                 else:
-                    raise ValueError(
-                        f"Invalid units specified for ({self.n_dims}d) "
-                        f"variable {var}."
+                    raise VocabError(
+                        f"Invalid units specified in vocabulary for "
+                        f"({self.n_dims}d) variable {var}."
                     )
                 
                 # If spatial coordinate variable, add/update any specified or 
@@ -344,11 +348,10 @@ class MoncDs:
                                 'attributes']['axis']
                     elif 'axis' not in self.ds[var].attrs:
                         # Prompt user if required.
-                        raise AttributeError(
+                        raise ConfigError(
                             f"Axis should be specified for spatial coordinate "
                             f"variables. No axis attribute found in dataset or "
-                            f"configuration file for "
-                            f"variable {var}."
+                            f"configuration file for variable {var}."
                         )
 
                     # Add positive attribute if required/specified (not expected).
@@ -376,7 +379,12 @@ class MoncDs:
                         variables: list|set|tuple,
                         shared: dict):
         
-        if shared['verbose']: print(f"Process {os.getpid()}: cfizing variables on MONC dataset {self.ds.attrs['title']} with {self.n_dims} spatial dimensions.")
+        if shared['verbose']: 
+            print(
+                f"Process {os.getpid()}: cfizing variables on MONC dataset "
+                f"{self.ds.attrs['title']} with {self.n_dims} spatial "
+                f"dimensions."
+            )
         
         # Process any coordinate variables first, as changes in these may affect
         # processing of data variables.
@@ -401,9 +409,13 @@ class MoncDs:
                 #     f"cfize_variables: {var} not found in vocabulary "
                 #     f"(dimension {self.n_dims})."
                 # )
-                # check/update any units already present.
-                self.update_units(var=var, time_units=shared['time_units'])
-                continue
+                raise VocabError(
+                    f"{var} not found in vocabulary "
+                    f"(dimension {self.n_dims})."
+                )
+                # # check/update any units already present.
+                # self.update_units(var=var, time_units=shared['time_units'])
+                # continue
 
             # update variable's dimensions if required
             if 'dimension_changes' in updates:
@@ -412,7 +424,7 @@ class MoncDs:
                     k in self.ds[var].dims
                     for k in updates['dimension_changes'].keys()
                 ]):
-                    raise KeyError(
+                    raise VocabError(
                         f"cfize_variables: {k}, specified in vocabulary - "
                         f"dimension_changes, is not a dimension of {var}."
                     )
@@ -438,8 +450,10 @@ class MoncDs:
 
             # check at least one present
             if 'standard_name' not in self.ds[var].attrs and 'long_name' not in self.ds[var].attrs:
-                raise KeyError("CF requires at least one of standard_name and "
-                            "long_name to be assigned to each variable.")
+                raise VocabError(
+                    "CF requires at least one of standard_name and "
+                    "long_name to be assigned to each variable."
+                )
             
             # Add/update units
             self.update_units(var=var, 
@@ -459,7 +473,7 @@ class MoncDs:
             # Convert any perturbation variables to absolute values.
             if 'perturbation_to_absolute' in updates and updates['perturbation_to_absolute']:
                 if 'reference_variable' not in updates:
-                    raise KeyError(
+                    raise VocabError(
                         f"{variable}: If perturbation_to_absolute is True, "
                         f"reference_variable must contain the name of the "
                         f"variable containing reference value(s).")
@@ -499,14 +513,14 @@ class MoncDs:
                 elif (attr in CONFIG and CONFIG[attr]) or (attr in defaults and defaults[attr]):
                     self.ds.attrs[attr] = CONFIG[attr] if attr in CONFIG else defaults[attr]
                 else:
-                    print(
-                        f"{attr} must be included as a global attribute, specified "
-                        f"in config.yml."
-                    )
-                    # raise AttributeError(
-                    #     f"{attr} must be included as a global attribute, specified "
-                    #     f"in config.yml."
+                    # print(
+                    #     f"{attr} must be included as a global attribute, "
+                    #     f"specified in config.yml."
                     # )
+                    self.warnings.append(ConfigWarning(
+                        f"{attr} must be included as a global attribute, "
+                        f"specified in config.yml."
+                    ))
 
     def get_options(self, fields: list|set|tuple = None) -> dict:
         '''

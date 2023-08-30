@@ -28,6 +28,9 @@ def process_large(
         title: str, 
         shared: dict
     ) -> str:
+
+    warnings = []
+    errors = []
     
     update_globals = {}  # This is not currently used, but is here for consistency with cf_merge
 
@@ -42,7 +45,11 @@ def process_large(
 
     group.processed = []
 
-    if shared['verbose']: print(f"process_large running on process {os.getpid()}: group {group.name} - file {op.basename(filepath)}")
+    if shared['verbose']:
+        print(
+            f"Process {os.getpid()}: process_large running on group "
+            f"{group.name} - file {op.basename(filepath)}"
+        )
     
     with xr.open_dataset(filepath, 
                          decode_times=False
@@ -66,29 +73,41 @@ def process_large(
                         last_time_point=last_time_point
             )  # time_var[i]
         except Exception as e:
-            raise e
+            errors.append['process_large: globals_to_vars: ' + str(e)]
+            return {
+                'warnings': warnings,
+                'errors': errors
+            }
         for name, array in new_vars.items():
             dataset.attrs.pop(name)
             dataset = dataset.assign({name: array})  # Overwrite with updated
 
         # Create MoncDs object for futher processing, and update dataset's title
-        monc_ds = MoncDs(
-            dataset=dataset,
-            time_variable=group.time_var,
-            n_dims=group.n_dims,
-            title=title
-        )
-        
+        try:
+            monc_ds = MoncDs(
+                dataset=dataset,
+                time_variable=group.time_var,
+                n_dims=group.n_dims,
+                title=title
+            )
+        except AttributeError as e:
+            errors.append('process_large: MoncDs: ' + str(e))
+            return {
+                'warnings': warnings,
+                'errors': errors
+            }
         #Call CF compliance function:
             # Adds any missing global attributes required by CF convention
             # Derives any required global attributes from options database
-        monc_ds.cfize(shared=shared)
-        # ds = cfize_dataset(
-        #     dataset=ds,
-        #     n_dims=dim,
-        #     title=title,
-        #     time_units=time_units
-        # )
+        try:
+            monc_ds = monc_ds.cfize(shared=shared)
+        except (ConfigError or VocabError or AttributeError) as e:
+            errors.append('process_large: MoncDs.cfize: ' + str(e))
+            return {
+                'warnings': warnings,
+                'errors': errors
+            }
+        warnings += monc_ds.warnings
 
         if group.action == 'split':
             # Split dataset by time-point, yielding multiple 
@@ -110,10 +129,14 @@ def process_large(
             if attr in ds.attrs:
                 ds.attrs[attr] = attr_type(func(i, processed))
             else:
-                raise AttributeError(
+                errors.append(AttributeError(
                     f"setup.py: split_attrs specifies derivation of {attr} "
                     f"in split datasets, but attribute was not found."
-                )
+                ))
+                return {
+                    'warnings': warnings,
+                    'errors': errors
+                }
 
         # set filepath
         filepath = op.join(
@@ -136,61 +159,98 @@ def process_large(
 
         # Export to NetCDF (set as single-command function, 
         # so can wrap in performance_time).
-        # TODO: Use compute=False option, then call 
-        # compute() on resulting dask.delayed.Delayed 
-        # object?
-        # if i == 0:
-        #     # Test regular save function
-        #     print(f"Saving new dataset as {filepath}.")
-        #     ds_to_nc(ds=ds,
-        #             filepath=filepath,
-        #             encodings=encodings)
-        # else:
-        # Test dask version
+        # Testing dask version
         if shared['verbose']: print(
-            f"Process {os.getpid()}: preparing delayed writer for "
-            f"{filepath}."
+                f"Process {os.getpid()}: preparing delayed writer for "
+                f"{filepath}."
         )
-        writers.append(ds_to_nc_dask(ds=ds,
-                                filepath=filepath,
-                                encodings=encodings,
-                                compress=COMPRESSION[0]
-                                ))
-        ds.close()
-        group.processed.append(filepath)
+        try:
+            writers.append(ds_to_nc_dask(ds=ds,
+                                    filepath=filepath,
+                                    encodings=encodings,
+                                    compress=COMPRESSION[0]
+                                    ))
+            ds.close()
+            group.processed.append(filepath)
+        except Exception as e:
+            errors.append('process_large: ds_to_nc_dask: ' + str(e))
+            return {
+                'warnings': warnings,
+                'errors': errors
+            }
 
     if shared['verbose']: print(f"Process {os.getpid()}: Computing writes.")
-    [perform_write(writer) for writer in writers]
+    try:
+        [perform_write(writer) for writer in writers]
+    except Exception as e:
+        errors.append('process_large: perform_write: ' + str(e))
+        return {
+            'warnings': warnings,
+            'errors': errors
+        }
     
     # TODO: Run CF checker on output files
     
 
-    return (
-        {'processed': group.processed, 'time_var': group.time_var},
-        update_globals
-    )
+    return {
+        'update_group':{
+            'processed': group.processed, 
+            'time_var': group.time_var
+        },
+        'update_globals': update_globals,
+        'warnings': warnings,
+        'errors': errors
+    }
     # return (group, shared)
 
 
 def cf_merge(group: DsGroup, 
              shared: dict) -> str:
     
-    if shared['verbose']: print(f"cf_merge running on process {os.getpid()}: group {group.name}")
-    # target_dir = shared['target_dir']
-    # time_units = shared['time_units']
-    # reference_vars = shared['reference_vars']
-
-    # if global_vars:
-    #     global vocabulary, reference_vars
-    #     reference_vars = global_vars['reference_vars']
-    #     vocabulary = global_vars['vocabulary']
+    errors = []
+    warnings = []
+    if shared['verbose']: print(
+            f"Process {os.getpid()}: cf_merge running on group {group.name}"
+        )
     
-    group.merge_times(shared=shared)
-    update_globals = group.cfize_and_save(shared=shared)
-    return (
-        {'processed': group.processed, 'time_var': group.time_var}, 
-        update_globals
-    )
+    try:
+        rtn = group.merge_times(shared=shared)
+    except Exception as e:
+        errors.append('cf_merge: DsGroup.merge_times: ' + str(e))
+        return {
+            'warnings': warnings,
+            'errors': errors
+        }
+    else:
+        if 'error' in rtn:
+            errors.append('cf_merge: DsGroup.merge_times: ' + str(rtn['error']))
+            return {
+                'warnings': warnings,
+                'errors': errors
+            }
+    try:
+        rtn = group.cfize_and_save(shared=shared)
+    except Exception as e:
+        errors.append('cf_merge: DsGroup.cfize_and_save: ' + str(e))
+        return {
+            'warnings': warnings,
+            'errors': errors
+        }
+    else:
+        update_globals = rtn['update_globals'] if 'update_globals' in rtn else None
+        update_group = rtn['update_group'] if 'update_group' in rtn else {
+            'processed': group.processed, 
+            'time_var': group.time_var
+        }
+        errors += 'cf_merge: DsGroup.cfize_and_save: ' + '; '.join([str(e) for e in rtn['errors']]) if 'errors' in rtn else []
+        warnings += rtn['warnings'] if 'warnings' in rtn else []
+    
+    return {
+        'update_group': update_group,
+        'update_globals': update_globals,
+        'warnings': warnings,
+        'errors': errors
+    }
 
 
 def process_parallel(
@@ -210,6 +270,7 @@ def process_parallel(
     time_units = shared['time_units']
     # vocabulary = shared['vocabulary']
     reference_vars = shared['reference_vars']
+    warnings = []
 
     # global reference_vars, vocabulary
     # Verify n_proc + controller doesn't exceed available cores
@@ -239,7 +300,10 @@ def process_parallel(
         '''
         for dim in sorted(list(groups.keys())):
             group = groups[dim]
-            if shared['verbose']: print(f"Parallel processing {dim}:{group.name}.")
+            if shared['verbose']: print(
+                    f"Process {os.getpid()}: Setting up parallel processing of "
+                    f"{dim}:{group.name}."
+                )
             
             if group.action == 'split' or dim == 3:
                 # The 2nd condition ensures that large files are allocated to
@@ -254,7 +318,14 @@ def process_parallel(
                 # are available for perturbations.
                 for d in {v['dim'] for v in reference_vars.values()}:
                     for r in results[d]:
-                        update_group, update_globals = r.get()
+                        result_dict = r.get()
+                        if 'errors' in result_dict:
+                            err_msg = '; '.join([str(e) for e in result_dict['errors']])
+                            sys.exit(err_msg)
+                        if 'warnings' in result_dict:
+                            warnings += result_dict['warnings']
+                        update_group = result_dict['update_group'] if 'update_group' in result_dict else None
+                        update_globals = result_dict['update_globals'] if 'update_globals' in result_dict else None
                         if groups[d].processed:
                             groups[d].processed += update_group['processed']
                         else:
@@ -306,13 +377,18 @@ def process_parallel(
                 #     ] for filepath in for_controller
                 # ]
                 for filepath in for_controller:
-                    [update_group, 
-                     update_globals] = process_large(
+                    r = process_large(
                         filepath=filepath,
                         group=group,
                         title=title,
                         shared=shared
                     )
+                    if 'errors' in r:
+                        exit('; '.join([str(e) for e in r['errors']]))
+                    if 'warnings' in r:
+                        warnings += r['warnings']
+                    update_group = r['update_group'] if 'update_group' in r else None
+                    update_globals = r['update_globals'] if 'update_globals' in r else None
                     if groups[dim].processed:
                         groups[dim].processed += update_group['processed']
                         # process_large(
@@ -339,8 +415,15 @@ def process_parallel(
                 # returned.
                 # [result.get() for result in results[dim]]
                 for result in results[dim]:
-                    [update_group, 
-                     update_globals] = result.get()
+                    # [update_group, 
+                    #  update_globals] = result.get()
+                    r = result.get()
+                    if 'errors' in r:
+                        exit('; '.join([str(e) for e in r['errors']]))
+                    if 'warnings' in r:
+                        warnings += r['warnings']
+                    update_group = r['update_group'] if 'update_group' in r else None
+                    update_globals = r['update_globals'] if 'update_globals' in r else None
                     if groups[dim].processed:
                         groups[dim].processed += update_group['processed']
                     else:
@@ -380,12 +463,7 @@ def process_parallel(
                         func=cfize_all_datasets,
                         kwds={
                             'group': group,
-                            'time_units': time_units,
-                            'target_dir': target_dir,
-                            'global_vars': {
-                                'reference_vars': reference_vars,
-                                'vocabulary': vocabulary
-                            }
+                            'shared': shared
                         }
                     )
                 )
@@ -398,21 +476,27 @@ def process_parallel(
             if not groups[dim].processed:
                 groups[dim].processed = []
                 for result in results[dim]:
-                    [update_group, 
-                     update_globals] = result.get()
+                    # [update_group, 
+                    #  update_globals] = result.get()
+                    r = result.get()
+                    if 'errors' in r:
+                        exit('; '.join([str(e) for e in r['errors']]))
+                    if 'warnings' in r:
+                        warnings += r['warnings']
+                    update_group = r['update_group'] if 'update_group' in r else None
+                    update_globals = r['update_globals'] if 'update_globals' in r else None
                     groups[dim].processed += update_group['processed']
                     groups[dim].time_var = update_group['time_var']
                 # [groups.update({dim: result.get()[0]}) for result in results[dim]]
                 # groups[dim].processed = [
                 #     result.get() for result in results[dim]
                 # ]
+    return warnings
 
 
 def cfize_all_datasets(
         group: DsGroup, 
-        time_units: TimeUnits, 
-        target_dir: str,
-        global_vars: dict
+        shared: dict
     ) -> list:
     '''
     Should print & return names of saved files
@@ -420,6 +504,8 @@ def cfize_all_datasets(
     '''
     
     update_globals = {}
+    errors = []
+    warnings = []
 #     print(f"Processing {group.n_dims}:{group.name}.")
 
 #     files = []
@@ -480,10 +566,15 @@ def cfize_all_datasets(
 
 #         files.append(filepath)
 
-    return (
-        {'processed': group.processed, 'time_var': group.time_var}, 
-        update_globals
-    )
+    return {
+        'update_group':{
+            'processed': group.processed, 
+            'time_var': group.time_var
+        },
+        'update_globals': update_globals,
+        'warnings': warnings,
+        'errors': errors
+    }
 
 
 def process_serial(
@@ -501,6 +592,7 @@ def process_serial(
 
     target_dir = shared['target_dir']
     time_units = shared['time_units']
+    warnings = []
 
     # Processe datasets in increasing order of dimensions.
     # Work with 0-2d files first, because 3d processing depends on 0d/1d.
@@ -532,14 +624,24 @@ def process_serial(
 
         # If group is to be merged:
         elif group.action == 'merge':
-            group.merge_times()
+            try:
+                rtn = group.merge_times(shared=shared)
+                if 'error' in rtn:
+                    sys.exit('process_serial: DsGroup.merge_times' + str(rtn['error']))
+
             # group.processed = cf_merge(
             #         group=group,
             #         time_units=time_units,
             #         target_dir=target_dir
             # )
-            group.cfize_and_save(time_units=time_units, 
-                                 target_dir=target_dir)
+                rtn = group.cfize_and_save(shared=shared)
+                if 'errors' in rtn:
+                    sys.exit('process_serial: DsGroup.cfize_and_save: ' + 
+                             '; '.join([str(e) for e in rtn['errors']]))
+                if 'warnings' in rtn:
+                    warnings += rtn['warnings']
+            except Exception as e:
+                sys.exit('process_serial (merging): ' + str(e))
     
         # Otherwise, process for CF compliance, but leave dataset as a 
         # single, standalone file.
@@ -551,6 +653,7 @@ def process_serial(
             #     time_units=time_units,
             #     target_dir=target_dir
             # )
+    return warnings
 
 
 def sort_nc(directory, shared: dict) -> [dict, list]:
@@ -747,12 +850,14 @@ def main():
     quiet = args.quiet
     verbose = args.verbose
 
+    warnings = []
+
     if verbose: print(f"Main app process id: {os.getpid()}")  # , started {start_time}
 
 
     # Validate supplied directory to parse.
     if not op.exists(args.source_dir):
-        raise OSError(f'Source directory {op.abspath(source_dir)} not found.')
+        sys.exit(OSError(f'Source directory {op.abspath(source_dir)} not found.'))
     source_dir = op.abspath(args.source_dir)
     
     time_units = None
@@ -763,7 +868,7 @@ def main():
             if not ref_time.tzinfo:
                 ref_time = ref_time.replace(tzinfo=timezone.utc)
         except Exception as e:
-            raise TypeError(f"{args.ref_time} is an invalid reference time. {e}")
+            sys.exit(f"{args.ref_time} is an invalid reference time. {str(e)}")
     else:
         ref_time = None
 
@@ -773,17 +878,17 @@ def main():
         try:
             calendar = Units(calendar=args.calendar).calendar
         except Exception as e:
-            print(
-                f"Calendar {args.calendar} not valid."
+            sys.exit(
+                f"Calendar {args.calendar} specified in arguments is not valid."
             )  # This should not be possible
     if ref_time:
         try:
             time_units = TimeUnits(
-                units=default_time_unit + ' since ' + ref_time.isoformat(),
+                units=f"{default_time_unit} since {ref_time.isoformat(sep=' ')}",
                 calendar=calendar)
         except ValueError as e:
-            print(
-                f"Could not create valid time units from reference date-time {ref_time} and calendar {calendar}. {e}"
+            sys.exit(
+                f"Could not create valid time units from reference date-time {ref_time} and calendar {calendar}. {str(e)}"
             )
     
     # Get/set directory for output files.
@@ -796,13 +901,13 @@ def main():
         try:
             os.makedirs(target_dir)
         except OSError as e:
-            raise OSError(
-                f"Unable to create target directory, {target_dir}. {e}"
+            sys.exit(
+                f"Unable to create target directory, {target_dir}. {str(e)}"
             )
     if not os.access(target_dir, os.W_OK):
-        raise OSError(
+        sys.exit(OSError(
             f"Write permission denied for target directory, {target_dir}."
-        )
+        ))
     if not args.target_dir:
         print(f"Processed files will be saved to: {target_dir}")
 
@@ -810,9 +915,9 @@ def main():
     # Subtract 1 from number of processes specified, to use one as controller.
     n_proc = args.n_proc - 1 if args.n_proc else 0
     if n_proc > os.cpu_count() - 1:
-        raise OSError(
+        sys.exit(OSError(
             f"Not enough cores available for {args.n_proc} processes. Maximum: {os.cpu_count()}."
-        )
+        ))
         # TODO: check os.cpu_count() works correctly on JASMIN, when mutliple
         # cores are allocated.
     
@@ -824,7 +929,10 @@ def main():
         # explicitly to any functions that may run on a separate process.
 
     # Parse directory & categorise NC files by type and dimensions
-    [group_by_dim, input_files] = sort_nc(source_dir, shared=shared)
+    try:
+        [group_by_dim, input_files] = sort_nc(source_dir, shared=shared)
+    except Exception as e:
+        sys.exit('sort_nc: ' + str(e))
     
     # ID time variable of each group from VOCAB.
     
@@ -848,17 +956,22 @@ def main():
     
     # For each dimension group:
     # If n_proc>0, use process pool; otherwise process sequentially.
-    if n_proc > 0:
-        process_parallel(
-            groups=group_by_dim, 
-            n_proc=n_proc, 
-            shared=shared
-        )
-    else:
-        process_serial(
-            groups=group_by_dim, 
-            shared=shared
-        )
+    try:
+        if n_proc > 0:
+            warnings += process_parallel(
+                groups=group_by_dim, 
+                n_proc=n_proc, 
+                shared=shared
+            )
+        else:
+            warnings += process_serial(
+                groups=group_by_dim, 
+                shared=shared
+            )
+    except (ConfigError or VocabError) as e:
+        sys.exit('Processing: ' + str(e))
+    except Exception as e:
+        sys.exit('Processing: ' + str(e))
 
     # TODO: move the following to the process_* routines?
     # Find dimension groups to be merged
@@ -877,31 +990,41 @@ def main():
         
         if merger.action == 'merge_groups':
             # Merge each group's resultant single dataset
-            merger.merge_groups(shared=shared)
+            try:
+                merger.merge_groups(shared=shared)
+            except xr.MergeError as e:
+                exit("Merge error in DsGroup.merge_groups: " + str(e))
+            except Exception as e:
+                exit("Unexpected error in DsGroup.merge_groups: " + str(e))
             
         group_by_dim[re.split(merger.stem,merger.name)[1]] = merger
 
         # Delete interim NC files, unless flagged to do otherwise.
         # TODO: this needs to wait until all 3d are done.
         if not args.keep_interim:
-            [os.remove(f) for f in merger.filepaths]
+            try:
+                [os.remove(f) for f in merger.filepaths]
+            except OSError as e:
+                exit("Failed to delete interim NC files. " + str(e))
 
     # Output list of actions taken: each list of merged files & what file they were merged into; each split file and list of files it was split into; each file processed without merge/split & what its new version is called.
     for k, group in group_by_dim.items():
         print(
             f"Group {k}: source files "
             f"{[op.basename(path) for path in group.filepaths]} --> "
-            f"{group.action + ' --> ' if group.action else ''}cfize --> "
+            f"{group.action + ' --> ' if group.action and group.action != 'merge_groups' else ''}cfize --> "
             f"{[op.basename(path) for path in group.processed]}"
         )
         
-    
     # Garbage collection if required.
 
     end_time = perf_counter()
     if verbose: print(f"Main app process {os.getpid()} took {end_time - start_time} seconds")
 
-    sys.exit(0)
+    if len(warnings) > 0:
+        sys.exit('\n'.join([str(e) for e in warnings]))
+    else:
+        sys.exit(0)
 
 
 if __name__ == '__main__': main()
