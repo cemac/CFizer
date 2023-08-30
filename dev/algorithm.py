@@ -14,7 +14,7 @@ from utils import type_from_str, tf, performance_time
 # from dask.diagnostics import ProgressBar
 from time import perf_counter
 import argparse
-from multiprocessing import Process, Pool, set_start_method  # multiprocess not available in Jaspy environment.
+from multiprocessing import Process, Pool #, set_start_method  # multiprocess not available in Jaspy environment.
 from cfize_ds import *
 from units import TimeUnits
 from groups import DsGroup, globals_to_vars

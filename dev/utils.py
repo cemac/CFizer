@@ -14,26 +14,6 @@ def performance_time(func):
 	return wrapper
 
 
-def vocab_from_xls(filepath: str) -> dict:
-    '''
-    This will for Excel file to convert to vocabulary dictionary, if it 
-    contains the right columns (fields).
-    It will attempt to fill any missing data based on CF conventions, including:
-    - inferring cell_method from presence of terms such as "mean" and "max" in variable name.
-    - looking up standard_name, if supplied.
-    It will check any units given using `cfunits`, and check against CF standard names definitions.
-
-    The intention is to compile a full lookup table, such that the main 
-    application does not need to infer anything or look anywhere else for the 
-    required data.
-    '''
-    import openpyxl as xl
-
-    VOCABULARY = {}
-    # 
-    return VOCABULARY
-
-
 def type_from_str(string: str):
     '''
     Uses numpy dtypes, to ensure xarray.Dataset.to_netcdf gives predictable 
