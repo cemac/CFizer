@@ -4,14 +4,17 @@ import numpy as np
 
 
 def performance_time(func):
-	def wrapper(*args, **kwargs):
-		start_time = perf_counter()
-		response = func(*args, **kwargs)  # run the wrapped function
-		end_time = perf_counter()
-		duration = end_time - start_time
-		print(f"Process {os.getpid()}: {func} took {duration} seconds.")
-		return response
-	return wrapper
+    def wrapper(*args, **kwargs):
+        start_time = perf_counter()
+        response = func(*args, **kwargs)  # run the wrapped function
+        end_time = perf_counter()
+        duration = end_time - start_time
+        if ('shared' in kwargs and 
+            'verbose' in kwargs['shared'] and 
+            kwargs['shared']['verbose']):
+            print(f"Process {os.getpid()}: {func} took {duration} seconds.")
+        return response
+    return wrapper
 
 
 def type_from_str(string: str):

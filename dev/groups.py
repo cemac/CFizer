@@ -7,7 +7,8 @@ from setup import *
 import re
 from units import TimeUnits
 from cfize_ds import MoncDs
-from utils import type_from_str
+from utils import type_from_str, performance_time
+from time import perf_counter
 
 
 def stem_str(*args: str):
@@ -97,6 +98,7 @@ def variable_glob(ds: xr.Dataset, var_glob: str) -> list:
     return [match_str.fullmatch(v).string for v in set(ds.variables) if match_str.fullmatch(v)]
 
 
+@performance_time
 def merge_dimensions(*args) -> xr.Dataset:
     '''
     This is designed to merge datasets whose time coordinates match, but contain
@@ -392,10 +394,13 @@ class DsGroup:
             # TODO: confirm time variable in new dataset matches self.time_var
             pass
 
+    # @performance_time
     def merge_times(self, shared: dict) -> None:
         '''
         Should print & return name of saved file(s)
         '''
+        if shared['verbose']:
+            start_time = perf_counter()
 
         # from cfize_ds import cfize_dataset  # To avoid circular imports
         # global vocabulary
@@ -500,7 +505,12 @@ class DsGroup:
         # Derive title/filename from group's stem & dimension
         # merged.attrs.update({'title': self.stem.strip('_ ') + self.n_dims if f'{self.n_dims}d' not in self.stem else self.stem.strip('_ ')})
         self.to_process.attrs['title'] = self.stem.strip('_ ') + str(self.n_dims) if f'{self.n_dims}d' not in self.stem else self.stem.strip('_ ')
-
+        
+        if shared['verbose']:
+            print(
+                f"Process {os.getpid()}: DsGroup.merge_times took "
+                f"{perf_counter() - start_time} seconds."
+            )
         return {'merged': self.to_process}
 
     def merge_groups(self, shared: dict) -> None:
@@ -626,7 +636,7 @@ class DsGroup:
         # self.to_process = list(self.datasets())  # Open all datasets in group.
         return self.cfize_and_save(shared=shared)
         
-    
+    # @performance_time
     def cfize_and_save(self, 
                        shared: dict
                        ):

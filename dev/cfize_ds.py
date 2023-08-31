@@ -4,6 +4,7 @@ from setup import *
 from utils import type_from_str, generate_coords, performance_time
 from cfunits import Units
 from dask.delayed import Delayed
+from time import perf_counter
 # from cfizer import OPTIONS_DATABASE, CONFIG
 
 
@@ -18,6 +19,7 @@ def is_monc(dataset: xr.Dataset) -> bool:
     return MONC_ID_ATTR in set(dataset.attrs).union(set(dataset.variables))
 
 
+@performance_time
 def split_ds(dataset: xr.Dataset, shared: dict, var: str = 'time') -> list[xr.Dataset]:
     if var not in dataset.dims:
         raise AttributeError(f'split_ds: {var} not in dataset dimensions.')
@@ -40,7 +42,8 @@ def split_ds(dataset: xr.Dataset, shared: dict, var: str = 'time') -> list[xr.Da
 def ds_to_nc(ds: xr.Dataset, 
              filepath: str, 
              encodings: dict = None, 
-             compress: bool = False) -> None:
+             compress: bool = False,
+             shared: dict = None) -> None:
     if compress:
         ds.to_netcdf(
             path=filepath, 
@@ -59,7 +62,8 @@ def ds_to_nc(ds: xr.Dataset,
 def ds_to_nc_dask(ds: xr.Dataset, 
                   filepath: str, 
                   encodings: dict = None, 
-                  compress: bool = False) -> Delayed:
+                  compress: bool = False,
+                  shared: dict = None) -> Delayed:
     if compress:
         return ds.to_netcdf(
             path=filepath, 
@@ -78,7 +82,8 @@ def ds_to_nc_dask(ds: xr.Dataset,
 
 
 @performance_time
-def perform_write(writer: Delayed) -> None:
+def perform_write(writer: Delayed,
+                  shared: dict = None) -> None:
     writer.compute()
 
 
@@ -130,6 +135,7 @@ class MoncDs:
         '''
 
         if shared['verbose']: 
+            start_time = perf_counter()
             print(
                 f"Process {os.getpid()}: cfize running on MONC dataset "
                 f"{self.ds.attrs['title']} with {self.n_dims} spatial "
@@ -158,6 +164,12 @@ class MoncDs:
         var_list.discard(OPTIONS_DATABASE['variable'])
         [var_list.discard(v) for v in CONFIG['global_to_variable'].keys()]
         self.cfize_variables(variables=var_list, shared=shared)
+
+        if shared['verbose']: 
+            print(
+                f"Process {os.getpid()}: MoncDs.cfize took "
+                f"{perf_counter() - start_time} seconds."
+            )
 
         # Return processed dataset
         return self.ds

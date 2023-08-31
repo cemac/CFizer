@@ -29,6 +29,9 @@ def process_large(
         shared: dict
     ) -> str:
 
+    if shared['verbose']:
+        start_time = perf_counter()
+
     warnings = []
     errors = []
     
@@ -168,7 +171,8 @@ def process_large(
             writers.append(ds_to_nc_dask(ds=ds,
                                     filepath=filepath,
                                     encodings=encodings,
-                                    compress=COMPRESSION[0]
+                                    compress=COMPRESSION[0],
+                                    shared=shared
                                     ))
             ds.close()
             group.processed.append(filepath)
@@ -181,7 +185,7 @@ def process_large(
 
     if shared['verbose']: print(f"Process {os.getpid()}: Computing writes.")
     try:
-        [perform_write(writer) for writer in writers]
+        [perform_write(writer, shared=shared) for writer in writers]
     except Exception as e:
         errors.append('process_large: perform_write: ' + str(e))
         return {
@@ -191,6 +195,11 @@ def process_large(
     
     # TODO: Run CF checker on output files
     
+    if shared['verbose']:
+        print(
+            f"Process {os.getpid()}: process_large took "
+            f"{perf_counter() - start_time} seconds."
+        )
 
     return {
         'update_group':{
@@ -332,7 +341,10 @@ def process_parallel(
                         update_group = result_dict['update_group'] if 'update_group' in result_dict else None
                         update_globals = result_dict['update_globals'] if 'update_globals' in result_dict else None
                         if groups[d].processed:
-                            groups[d].processed += update_group['processed']
+                            groups[d].processed = list({
+                                *update_group['processed'], 
+                                *groups[d].processed
+                            })
                         else:
                             groups[d].processed = update_group['processed']
                         groups[d].time_var = update_group['time_var']
@@ -395,7 +407,10 @@ def process_parallel(
                     update_group = r['update_group'] if 'update_group' in r else None
                     update_globals = r['update_globals'] if 'update_globals' in r else None
                     if groups[dim].processed:
-                        groups[dim].processed += update_group['processed']
+                        groups[dim].processed = list({
+                            *groups[dim].processed, 
+                            *update_group['processed']
+                        })
                         # process_large(
                             #     filepath=filepath,
                             #     group=group,
@@ -430,7 +445,10 @@ def process_parallel(
                     update_group = r['update_group'] if 'update_group' in r else None
                     update_globals = r['update_globals'] if 'update_globals' in r else None
                     if groups[dim].processed:
-                        groups[dim].processed += update_group['processed']
+                        groups[dim].processed = list(
+                            {*groups[dim].processed,
+                             *update_group['processed']}
+                        )
                     else:
                         groups[dim].processed = update_group['processed']
                     groups[dim].time_var = update_group['time_var']
@@ -490,7 +508,10 @@ def process_parallel(
                         warnings += r['warnings']
                     update_group = r['update_group'] if 'update_group' in r else None
                     update_globals = r['update_globals'] if 'update_globals' in r else None
-                    groups[dim].processed += update_group['processed']
+                    groups[dim].processed = list(
+                            {*groups[dim].processed,
+                             *update_group['processed']}
+                        )
                     groups[dim].time_var = update_group['time_var']
                 # [groups.update({dim: result.get()[0]}) for result in results[dim]]
                 # groups[dim].processed = [
@@ -1019,7 +1040,8 @@ def main():
                     print("Failed to delete interim NC files. " + str(e))
             else:
                 if shared['verbose']:
-                    print("Removed interim files:", merger.filepaths)
+                    print("Removed interim files:", 
+                          [op.basename(f) for f in merger.filepaths])
 
     # Output list of actions taken: each list of merged files & what file they were merged into; each split file and list of files it was split into; each file processed without merge/split & what its new version is called.
     for k, group in group_by_dim.items():
