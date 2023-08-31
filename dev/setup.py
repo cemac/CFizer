@@ -161,9 +161,18 @@ for k, v in CONFIG.items():
     if isinstance(v, str) and v.lower() == 'none':
         CONFIG[k] = None
 
-vocab_file = open(os.path.join(app_dir, "vocabulary.yml"))
+try:
+    vocab_file = open(os.path.join(app_dir, "vocabulary.yml"))
+except:
+    exit(
+        f"Vocabulary file ({os.path.join(app_dir, 'vocabulary.yml')}) not "
+        f"found. To derive from Excel spreadsheet, run the following command "
+        f"from the application directory:"
+        f"{os.path.join(app_dir, 'vocab_from_xlsx.py')}"
+    )
 vocabulary = yaml.safe_load(vocab_file)
 vocab_file.close()
+print(f"Vocabulary loaded from {os.path.join(app_dir, 'vocabulary.yml')}.")
 reference_vars = {}
 
 # If dimensions (outermost key) aren't simply digits, assume the dimension is
@@ -234,3 +243,5 @@ for var in reference_vars.keys():
 
 # TODO: look for standard_name table, and if not found, download.
 # Refer to cf-checker.
+
+print("Vocabulary validated.")

@@ -816,8 +816,9 @@ def parse_arguments():
     parser.add_argument(
         '--keep-interim', '-i',
         dest='keep_interim',
-        type=tf,
-        choices={True, False},
+        action='store_true',
+        # type=tf,
+        # choices={True, False},
         default=False,
         help='Set to True if multiple dimension sets are being merged, but you want to keep the single-dimension-set files as well.',
         required=False
@@ -826,8 +827,9 @@ def parse_arguments():
     parser.add_argument(
         '--verbose', '-v',
         dest='verbose',
-        type=tf,
-        choices=(True, False),
+        action='store_true',
+        # type=tf,
+        # choices=(True, False),
         default=False,
         help='Set to True to report all progress to stdout.',
         required=False
@@ -836,8 +838,9 @@ def parse_arguments():
     parser.add_argument(
         '--quiet', '-q',
         dest='quiet',
-        type=tf,
-        choices=(True, False),
+        action='store_true',
+        # type=tf,
+        # choices=(True, False),
         default=False,
         help='Set to True to suppress warnings being printed to stdout.',
         required=False
@@ -945,7 +948,8 @@ def main():
     # Assume time units will be common to all datasets in directory.
     if not time_units:
         time_units = time_units_from_input(input_files) if input_files else None
-        if verbose: print('Time units:', (time_units.formatted()))
+        if verbose and time_units:
+            print('Time units found in input file:', (time_units.formatted()))
 
     # NOTE: by this stage, time_units should contain a valid reference date /
     # datetime and calendar. The base units will be set to the default 
@@ -1010,7 +1014,10 @@ def main():
             try:
                 [os.remove(f) for f in merger.filepaths]
             except OSError as e:
-                exit("Failed to delete interim NC files. " + str(e))
+                print("Failed to delete interim NC files. " + str(e))
+            else:
+                if shared['verbose']:
+                    print("Removed interim files:", merger.filepaths)
 
     # Output list of actions taken: each list of merged files & what file they were merged into; each split file and list of files it was split into; each file processed without merge/split & what its new version is called.
     for k, group in group_by_dim.items():

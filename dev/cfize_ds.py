@@ -275,13 +275,28 @@ class MoncDs:
                 # Otherwise, check with cfunits.Units().isvalid
                 else:
                     if Units(self.ds[var].attrs['units']).isvalid:
+                        if (
+                            (var == self.time_var or 
+                            ('axis' in self.ds[var].attrs and 
+                             self.ds[var].attrs['axis'] == 'T')
+                            ) and not shared['time_units']
+                        ):
+                            if not Units(self.ds[var].attrs['units']).isreftime:
+                                raise VocabError(
+                                    f"update_units: "
+                                    f"{self.ds[var].attrs['units']} is an "
+                                    f"invalid unit for {var}: the CF format "
+                                    f"for time coordinate variables is "
+                                    f"'<time unit> since <reference date[time]"
+                                    f"'. No updated unit found in vocabulary."
+                                )
                         self.ds[var].attrs['units'] = format_units(
                             self.ds[var].attrs['units']
                         )
                     elif self.ds[var].attrs['units'].lower() == 'fraction':
                         self.ds[var].attrs['units'] = '1'
                     else:
-                        pass
+                        # pass
                         # print(
                         #     f"{self.ds[var].attrs['units']}: invalid units for "
                         #     f"variable {var} in dataset "
@@ -301,16 +316,22 @@ class MoncDs:
                 #     f"No units specified for {var} in vocabulary "
                 #     f"({self.n_dims}d), and no existing units found."
                 # )
-                return
-                # raise AttributeError(
-                #     f"CF conventions require that units be specified for each "
-                #     f"variable. No units specified in vocabulary "
-                #     f"({self.n_dims}d) for {var}, and no existing units found."
-                # )
+                # return
+                raise VocabError(
+                    f"update_units: CF conventions require that units be "
+                    f"specified for each variable. No units specified in "
+                    f"vocabulary ({self.n_dims}d) for {var}, and no existing "
+                    f"units found."
+                )
         else:
             # Units specified in vocabulary.
             # if variable is a time coordinate:
-            if var == self.time_var:
+            if var == (
+                self.time_var or 
+                ('axis' in self.ds[var].attrs and 
+                 self.ds[var].attrs['axis'] == 'T') or
+                ('axis' in updates and updates['axis'] == 'T')
+            ):
                 # If supplied, process new units via TimeUnits class.
                 # Build any missing attributes from time_units parameter.
                 if 'calendar' in updates :
@@ -321,8 +342,23 @@ class MoncDs:
                 else:
                     calendar = time_units.calendar
                 self.ds[var].attrs['calendar'] = calendar
-                if not TimeUnits(units=updates['units']).isreftime:
-                    u = f"{updates['units']} since {time_units.reftime.isoformat(sep=' ')}"
+                if TimeUnits(units=updates['units']).isreftime:
+                    u = updates['units']
+                else:
+                    if time_units:
+                        u = f"{updates['units']} since {time_units.reftime.isoformat(sep=' ')}"
+                    elif 'units' in self.ds[var].attrs and Units(self.ds[var].attrs['units']).isreftime:
+                        u = f"{updates['units']} since {Units(self.ds[var].attrs['units']).reftime.isoformat(sep=' ')}"
+                    else:
+                        raise VocabError(
+                                    f"update_units: "
+                                    f"{updates['units']} is an "
+                                    f"invalid unit for {var}: the CF format "
+                                    f"for time coordinate variables is "
+                                    f"'<time unit> since <reference date[time]"
+                                    f"'. No reference date[time] found or "
+                                    f"specifed."
+                        )
                 new_units = TimeUnits(units=u, 
                                     calendar=calendar)
                 # Assign T to axis.
