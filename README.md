@@ -11,7 +11,7 @@ Clone this repository.
 If running on JASMIN, load the `jaspy` environment: `module load jaspy/3.10/r20230718`. This contains all the required dependencies.
 
 # Setup
-The most important setup for users is to check/complete the `vocabulary.yml` and `config.yml` files. The define, respectively, how the MONC variables are to be modified for CF compliance, and parameters that should be uniform across a set of files, including the source of the original data.
+The most important setup for users is to check/complete the `vocabulary.yml` and `config.yml` files. They define, respectively, how the MONC variables are to be modified for CF compliance, and parameters that should be uniform across a set of files, including the source of the original data.
 
 [CF Conventions recommend](http://cfconventions.org/Data/cf-conventions/cf-conventions-1.10/cf-conventions.html#description-of-file-contents) the following global attributes be present in all datasets:
 - `title`:          Set automatically by CFizer, based on file names and any merge/split operations.
