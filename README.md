@@ -24,4 +24,4 @@ Option | Argument | Function | Example
 `--cpus`, `-p`|Integer|Total number of cores to use for parallel processing (including controller process). Default: 1 (serial)|`-p 16`
 `--keep-interim`,`-i`||Set if multiple dimension sets are being merged, but you want to keep the single-dimension-set files as well. By default, these redundant files are deleted.|
 `--verbose`, `-v`||Set to report all progress and function timings to stdout.|
-`--quiet`, `-q`||'Set to suppress any warnings normally printed to stdout upon completion.'|
+`--quiet`, `-q`||Set to suppress any warnings normally printed to stdout upon completion.|
