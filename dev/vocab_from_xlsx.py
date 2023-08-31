@@ -64,11 +64,16 @@ def vocab_from_xls(filepath: str) -> dict:
             vocabulary.update({subset: {}})
         else:  # variable
             if subset == 'all':
-                vocabulary.update()
+                vocabulary.update({
+                    row[0].value.split('(')[0].strip(): 
+                    {field: str(row[index].value) 
+                    for field, index in header_row.items() 
+                    if row[index].value is not None}
+                })
             else:
                 vocabulary[subset].update({
                     row[0].value.split('(')[0].strip(): 
-                    {field: row[index].value 
+                    {field: str(row[index].value) 
                     for field, index in header_row.items() 
                     if row[index].value is not None}
                 })
@@ -83,7 +88,6 @@ def vocab_from_xls(filepath: str) -> dict:
         for var, attrs in var_set.items():
             if 'dimension_changes' in attrs:
                 if not isinstance(vocabulary[subset][var]['dimension_changes'], dict):
-                    
                     vocabulary[subset][var]['dimension_changes'] = {c.split(':')[0].strip(): c.split(':')[1].strip() 
                             for c in re.split(
                                 '[,;]', 
@@ -97,12 +101,24 @@ def vocab_from_xls(filepath: str) -> dict:
     return vocabulary
 
 
+def check_units(vocab: dict) -> dict:
+    valid_units = {}  # {set_name: {} for set_name in vocab.keys()}
+    for set_name, var_set in vocab.items():
+        for var, attrs in var_set.items():
+            if 'units' in attrs.keys():
+                valid_units.update(
+                    {(set_name, var): 
+                     (attrs['units'], Units(attrs['units']).isvalid)}
+                )
+    return valid_units
+
+
 def vocab_to_yaml(vocab: dict) -> str:
     filepath = op.join(app_dir, 'vocabulary.yml')
     if op.exists(filepath):
         while True:
             overwrite = input(
-                f"Vocabulary file {filepath} already exists. Overwrite?"
+                f"Vocabulary file {filepath} already exists. Overwrite? "
             )
             if overwrite[0].lower() == 'y': break
             elif overwrite[0].lower() == 'n':
@@ -126,7 +142,14 @@ if __name__ == '__main__':
     if not 'xls' in excel_file[-4:]:  # Finds 'xls' or 'xlsx':
         raise TypeError("Filepath must be to an Excel spreadsheet file.")
     vocabulary = vocab_from_xls(filepath=excel_file)
+    unit_validation = check_units(vocab=vocabulary)
+    if not all([u[1] for u in unit_validation.values()]):
+        print("Invalid units in vocabulary:")
+        # inval = {var: u[0] for var, u in unit_validation.items() if not u[1]}
+        for set_var, unit_val in unit_validation.items():
+            if not unit_val[1]:
+                print(f"{set_var[0]} {set_var[1]}: {unit_val[0]}")
+        exit(1)
     yaml_file = vocab_to_yaml(vocab=vocabulary)
     print(f"New vocabulary file created: {yaml_file}")
     sys.exit(0)
-    
