@@ -1,0 +1,350 @@
+0:
+  LWP_max:
+    long_name: Maximum Liquid Water Path
+    units: kg m-2
+  LWP_mean:
+    long_name: Liquid Water Path
+    units: kg m-2
+  RWP_max:
+    long_name: Maximum Rain Water Path
+    units: kg m-2
+  RWP_mean:
+    long_name: Rain Water Path
+    units: kg m-2
+  VWP_max:
+    long_name: Maximum Water Vapor Path
+    units: kg m-2
+  VWP_mean:
+    long_name: Water Vapor Path
+    units: kg m-2
+  lathf_max:
+    long_name: Domain Maximum Latent Heat Flux
+    standard_name: upward_latent_heat_flux_in_air
+    units: W m-2
+  lathf_mean:
+    long_name: Latent Heat Flux
+    standard_name: upward_latent_heat_flux_in_air
+    units: W m-2
+  lathf_min:
+    long_name: Domain Minimum Latent Heat Flux
+    standard_name: upward_latent_heat_flux_in_air
+    units: W m-2
+  reske_max:
+    long_name: Maximum Vertically Integrated Resolved Kinetic Energy
+    units: J m-2
+  reske_mean:
+    long_name: Vertically Integrated Resolved Kinetic Energy
+    units: J m-2
+  reske_min:
+    long_name: Minimum Vertically Integrated Resolved Kinetic Energy
+    units: J m-2
+  senhf_max:
+    long_name: Domain Maximum Sensible Heat Lfux
+    standard_name: upward_sensible_heat_flux_in_air
+    units: W m-2
+  senhf_mean:
+    long_name: Sensible Heat Flux
+    standard_name: upward_sensible_heat_flux_in_air
+    units: W m-2
+  senhf_min:
+    long_name: Domain Minimum Sensible Heat Flux
+    standard_name: upward_sensible_heat_flux_in_air
+    units: W m-2
+  subke_max:
+    long_name: Maximum Vertically Integrated Subgrid Kinetic Energy
+    units: J m-2
+  subke_mean:
+    long_name: Vertically Integrated Subgrid Kinetic Energy
+    units: J m-2
+  subke_min:
+    long_name: Minimum Vertically Integrated Subgrid Kinetic Energy
+    units: J m-2
+  surface_precip_max:
+    long_name: Maximum Surface Precipitation
+    standard_name: precipitation_flux
+    units: kg m-2 s-1
+  surface_precip_mean:
+    long_name: Surface Precipitation
+    standard_name: precipitation_flux
+    units: kg m-2 s-1
+  time_series*:
+    long_name: Time
+    standard_name: time
+    units: s
+    updated_name: time
+  w_max:
+    long_name: Domain Maximum Vertical Velocity
+    units: m s-1
+  w_min:
+    long_name: Domain Minimum Vertical Velocity
+    units: m s-1
+  z:
+    long_name: Altitude (Cell-Edges)
+    standard_name: altitude
+    units: m
+  zn:
+    long_name: Altitude (Cell-Centres)
+    standard_name: altitude
+    units: m
+1:
+  ice_cloud_fraction:
+    standard_name: mass_fraction_of_cloud_ice_in_air
+    units: 1
+  liquid_cloud_fraction:
+    standard_name: mass_fraction_of_cloud_liquid_water_in_air
+    units: 1
+  liquid_mmr_mean:
+    long_name: Cloud Liquid Water Mass Mixing Ratio
+    standard_name: cloud_liquid_water_mixing_ratio
+    units: kg kg-1
+  pcond_mean:
+    units: kg kg-1 s-1
+  pracw_mean:
+    units: kg kg-1 s-1
+  praut_mean:
+    units: kg kg-1 s-1
+  prefn:
+    long_name: Reference Pressure
+    standard_name: reference_pressure
+    units: Pa
+  prevp_mean:
+    units: kg kg-1 s-1
+  psedl_mean:
+    units: kg kg-1 s-1
+  psedr_mean:
+    units: kg kg-1 s-1
+  rain_mmr_mean:
+    long_name: Rain Water Mass Mixing Ratio
+    units: kg kg-1
+  rh_mean:
+    standard_name: relative_humidity
+    units: 1
+  rho:
+    long_name: Density At W Levels
+    standard_name: air_density
+    units: kg m-3
+  rhon:
+    long_name: Density At P Levels
+    standard_name: air_density
+    units: kg m-3
+  th2_mean:
+    long_name: Square Of Potential Temperature
+    units: K2
+  theta_mean:
+    long_name: Potential Temperature
+    standard_name: air_potential_temperature
+  thinit:
+    long_name: Initial Potential Temperature
+    standard_name: air_potential_temperature
+  thref:
+    long_name: Reference Potential Temperature
+    standard_name: air_potential_temperature
+  time_series*:
+    standard_name: time
+    units: s
+    updated_name: time
+  total_cloud_fraction:
+    standard_name: mass_fraction_of_cloud_condensed_water_in_air
+    units: 1
+  u_wind_mean:
+    long_name: Wind Speed In X Direction
+    standard_name: x_wind
+    units: m s-1
+  uu_mean:
+    long_name: Square Of X Wind
+    units: m2 s-2
+  uv_mean:
+    long_name: Product Of X And Y Wind Speed
+    standard_name: product_of_eastward_wind_and_northward_wind
+    units: m2 s-2
+  uw_mean:
+    long_name: Product Of X And Z Wind Speed
+    standard_name: product_of_eastward_wind_and_upward_air_velocity
+    units: m2 s-2
+  v_wind_mean:
+    long_name: Wind Speed In Y Direction
+    standard_name: y_wind
+    units: m s-1
+  vapour_mmr_mean:
+    long_name: Water Vapour Mass Mixing Ratio
+    standard_name: humidity_mixing_ratio
+    units: kg kg-1
+  vv_mean:
+    long_name: Square Of Y Wind
+    units: m2 s-2
+  vw_mean:
+    long_name: Product Of Y And Z Wind Speed
+    standard_name: product_of_northward_wind_and_upward_air_velocity
+    units: m2 s-2
+  w_wind_mean:
+    long_name: Wind Speed In Z Direction
+    standard_name: upward_air_velocity
+    units: m s-1
+  wke_mean:
+    long_name: Product Of Z Wind Speed And Kinetic Energy
+    units: J m-2 s-1
+  wql_ad_mean:
+    long_name: Liquid Specific Humidity Flux Due To Advection
+    units: m s-1
+  wql_cn_mean:
+    long_name: Liquid Specific Humidity Flux Due To Convection
+    units: m s-1
+  wqr_ad_mean:
+    long_name: Rain Specific Humidity Flux Due To Advection
+    units: m s-1
+  wqr_cn_mean:
+    long_name: Rain Specific Humidity Flux Due To Convection
+    units: m s-1
+  wqv_ad_mean:
+    long_name: Water Vapour Specific Humidity Flux Due To Advection
+    units: m s-1
+  wqv_cn_mean:
+    long_name: Water Vapour Specific Humidity Flux Due To Convection
+    units: m s-1
+  wtheta_ad_mean:
+    long_name: Product Of Z Wind Speed And Potential Temperature Due To Advection
+    units: K m s-1
+  wtheta_cn_mean:
+    long_name: Product Of Z Wind Speed And Potential Temperature Due To Convection
+    units: K m s-1
+  ww_mean:
+    long_name: Square Of Z Wind
+    standard_name: square_of_upward_air_velocity
+    units: m2 s-2
+  www_mean:
+    long_name: Cube Of Z Wind
+    units: m3 s-3
+  wwww_mean:
+    long_name: Quartic Of Z Wind
+    units: m4 s-4
+  z:
+    long_name: Altitude (Cell-Edges)
+    standard_name: altitude
+    units: m
+  zn:
+    long_name: Altitude (Cell-Centres)
+    standard_name: altitude
+    units: m
+2:
+  clbas:
+    standard_name: cloud_base_altitude
+    units: m
+  cltop:
+    standard_name: cloud_top_altitude
+    units: m
+  lathf:
+    long_name: Latent Heat Flux
+    standard_name: upward_latent_heat_flux_in_air
+    units: W m-2
+  lwp:
+    long_name: Liquid Water Path
+    units: kg m-2
+  reske:
+    long_name: Vertically Integrated Resolved Kinetic Energy
+    standard_name: integral_of_atmosphere_kinetic_energy_content_wrt_zn
+    units: J m-2
+  rwp:
+    long_name: Rain Water Path
+    units: kg m-2
+  senhf:
+    long_name: Sensible Heat Flux
+    standard_name: upward_sensible_heat_flux_in_air
+    units: W m-2
+  subke:
+    long_name: Vertically Integrated Subgrid Kinetic Energy
+    units: J m-2
+  surface_precip:
+    long_name: Surface Precipitation
+    standard_name: precipitation_flux_ at_sea_level
+    units: kg m-2 s-1
+  time_series*:
+    standard_name: time
+    units: s
+    updated_name: time
+  vwp:
+    long_name: Water Vapor Path
+    units: kg m-2
+  x:
+    long_name: X-Coordinate In Cartesian System (Cell-Centers)
+    units: m
+  y:
+    long_name: Y-Coordinate In Cartesian System (Cell-Centers)
+    units: m
+  z:
+    long_name: Altitude (Cell-Edges)
+    standard_name: altitude
+    units: m
+  zn:
+    long_name: Altitude (Cell-Centres)
+    standard_name: altitude
+    units: m
+3:
+  p:
+    long_name: Pressure Perturbation
+    perturbation_to_absolute: true
+    reference_variable: prefn
+    standard_name: difference_of_air_pressure_from_model_reference
+    units: Pa
+  q_cloud_liquid_mass:
+    long_name: Cloud Liquid Water Mass Mixing Ratio
+    standard_name: cloud_liquid_water_mixing_ratio
+    units: kg kg-1
+  q_cloud_liquid_number:
+    standard_name: number_concentration_of_cloud_liquid_water_particles_in_air
+    units: m-3
+  q_rain_mass:
+    long_name: Rain Water Mass Mixing Ratio
+    standard_name: mass_fraction_of_liquid_precipitation_in_air
+    units: kg kg-1
+  q_rain_number:
+    long_name: Number Concentration Of Rain Particles In Air
+    units: m-3
+  q_vapour:
+    long_name: Mass Fraction Of Water Vapour In Air
+    standard_name: humidity_mixing_ratio
+    units: kg kg-1
+  th:
+    long_name: Potential Temperature Perturbation
+    perturbation_to_absolute: true
+    reference_variable: thref
+    units: K
+  time_series*:
+    standard_name: time
+    units: s
+    updated_name: time
+  u:
+    dimension_changes:
+      x: xu
+    long_name: Wind Speed In X Direction
+    standard_name: x_wind
+    units: m s-1
+  v:
+    dimension_changes:
+      y: yv
+    long_name: Wind Speed In Y Direction
+    standard_name: y_wind
+    units: m s-1
+  w:
+    long_name: Vertical Velocity
+    standard_name: upward_air_velocity
+    units: m s-1
+  x:
+    long_name: X-Coordinate In Cartesian System (Cell-Centers)
+    units: m
+  y:
+    long_name: Y-Coordinate In Cartesian System (Cell-Centers)
+    units: m
+  xu:
+    long_name: X-Coordinate In Cartesian System (Cell-Edges)
+    units: m
+  yv:
+    long_name: Y-Coordinate In Cartesian System (Cell-Edges)
+    units: m
+  z:
+    long_name: Altitude (Cell-Edges)
+    standard_name: altitude
+    units: m
+  zn:
+    long_name: Altitude (Cell-Centres)
+    standard_name: altitude
+    units: m
