@@ -283,7 +283,7 @@
     long_name: Pressure
     perturbation_to_absolute: true
     reference_variable: prefn
-    standard_name: difference_of_air_pressure_from_model_reference
+    standard_name: air_pressure
     units: Pa
   q_cloud_liquid_mass:
     long_name: Cloud Liquid Water Mass Mixing Ratio
@@ -307,6 +307,7 @@
     long_name: Potential Temperature
     perturbation_to_absolute: true
     reference_variable: thref
+    standard_name: air_potential_temperature
     units: K
   time_series*:
     standard_name: time
