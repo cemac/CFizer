@@ -10,9 +10,11 @@ from cfunits import Units
 import sys
 # os.chdir(op.join(os.getcwd(), 'dev'))
 # print(os.getcwd())
-sys.path.append(os.getcwd())  # This shouldn't be necessary once packaged
+# Workaround to find package directory (https://stackoverflow.com/a/61571300)
+if os.getcwd() not in sys.path:
+    sys.path.append(os.getcwd())  # This shouldn't be necessary once packaged
 # print(sys.path)
-from dev import VOCAB_FIELDS
+from dev import VOCAB_FIELDS, app_dir
 
 
 def vocab_from_xls(filepath: str) -> dict:
@@ -96,7 +98,18 @@ def vocab_from_xls(filepath: str) -> dict:
 
 
 def vocab_to_yaml(vocab: dict) -> str:
-
+    filepath = op.join(app_dir, 'vocabulary.yml')
+    if op.exists(filepath):
+        while True:
+            overwrite = input(
+                f"Vocabulary file {filepath} already exists. Overwrite?"
+            )
+            if overwrite[0].lower() == 'y': break
+            elif overwrite[0].lower() == 'n':
+                print("Exiting without updating vocabulary.yml")
+                sys.exit(0)
+    with open(filepath, "w") as f:
+        yaml.safe_dump(vocab, f)
     return filepath
 
 
@@ -107,9 +120,13 @@ if __name__ == '__main__':
         help='Path to Microsoft Excel spreadsheet (.xlsx) file containing the vocabulary in a sheet of that name.'
     )
     args = parser.parse_args()
-    filepath = op.abspath(args.filepath)
-    if not op.exists(filepath):
-        raise OSError(f"Filepath {filepath} not found.")
-    if not 'xls' in filepath[-4:]:  # Finds 'xls' or 'xlsx':
+    excel_file = op.abspath(args.filepath)
+    if not op.exists(excel_file):
+        raise OSError(f"Filepath {excel_file} not found.")
+    if not 'xls' in excel_file[-4:]:  # Finds 'xls' or 'xlsx':
         raise TypeError("Filepath must be to an Excel spreadsheet file.")
-    vocabulary = vocab_from_xls(filepath=filepath)
+    vocabulary = vocab_from_xls(filepath=excel_file)
+    yaml_file = vocab_to_yaml(vocab=vocabulary)
+    print(f"New vocabulary file created: {yaml_file}")
+    sys.exit(0)
+    

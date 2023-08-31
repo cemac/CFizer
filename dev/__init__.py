@@ -1,4 +1,15 @@
+import os
+
+
 __version__ = '1.0.0'
+
+app_dir = os.getcwd()
+if 'dev' not in app_dir:  # TODO: Update for production version
+    if 'test_data' not in app_dir:
+        app_dir = os.path.join(app_dir, 'dev')
+    else:
+        app_dir = os.path.join(os.path.dirname(app_dir), 'dev')
+
 
 '''
 Define required fields in vocabulary file/dictionary, as key: value pairs.

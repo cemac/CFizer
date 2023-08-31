@@ -12,7 +12,10 @@ CFizer Version: See __version__
 import yaml
 import os
 import sys
-from cfizer import VOCAB_FIELDS
+# Workaround to find package directory (https://stackoverflow.com/a/61571300)
+if os.getcwd() not in sys.path:
+    sys.path.append(os.getcwd())  # This shouldn't be necessary once packaged
+from dev import VOCAB_FIELDS, app_dir  # TODO: update for production version
 
 
 CF_ATTRIBUTES = {'title', 
@@ -54,13 +57,6 @@ DROP_FOR_DEPHY = ("longitude", "latitude", "z0")
 # Define dimensions by which files & their contained variables are to be 
 # divided. Dimensions exclude time, i.e. 0d variables vary only with time.
 VOCAB_DIMS = {'0d', '1d', '2d', '3d'}
-
-app_dir = os.getcwd()
-if 'dev' not in app_dir:
-    if 'test_data' not in app_dir:
-        app_dir = os.path.join(app_dir, 'dev')
-    else:
-        app_dir = os.path.join(os.path.dirname(app_dir), 'dev')
 
 config_file = open(os.path.join(app_dir, "config.yml"))
 CONFIG = yaml.safe_load(config_file)
