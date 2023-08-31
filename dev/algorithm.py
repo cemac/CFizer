@@ -389,7 +389,7 @@ def process_parallel(
                         shared=shared
                     )
                     if 'errors' in r and r['errors']:
-                        exit('; '.join([str(e) for e in r['errors']]))
+                        sys.exit('; '.join([str(e) for e in r['errors']]))
                     if 'warnings' in r:
                         warnings += r['warnings']
                     update_group = r['update_group'] if 'update_group' in r else None
@@ -424,7 +424,7 @@ def process_parallel(
                     #  update_globals] = result.get()
                     r = result.get()
                     if 'errors' in r and r['errors']:
-                        exit('; '.join([str(e) for e in r['errors']]))
+                        sys.exit('; '.join([str(e) for e in r['errors']]))
                     if 'warnings' in r:
                         warnings += r['warnings']
                     update_group = r['update_group'] if 'update_group' in r else None
@@ -485,7 +485,7 @@ def process_parallel(
                     #  update_globals] = result.get()
                     r = result.get()
                     if 'errors' in r and r['errors']:
-                        exit('; '.join([str(e) for e in r['errors']]))
+                        sys.exit('; '.join([str(e) for e in r['errors']]))
                     if 'warnings' in r:
                         warnings += r['warnings']
                     update_group = r['update_group'] if 'update_group' in r else None
@@ -917,7 +917,8 @@ def main():
             f"Write permission denied for target directory, {target_dir}."
         ))
     if not args.target_dir:
-        print(f"Processed files will be saved to: {target_dir}")
+        if not quiet:
+            print(f"Processed files will be saved to: {target_dir}")
 
     # Set number of processes to place in process pool.
     # Subtract 1 from number of processes specified, to use one as controller.
@@ -948,7 +949,7 @@ def main():
     # Assume time units will be common to all datasets in directory.
     if not time_units:
         time_units = time_units_from_input(input_files) if input_files else None
-        if verbose and time_units:
+        if shared['verbose'] and time_units:
             print('Time units found in input file:', (time_units.formatted()))
 
     # NOTE: by this stage, time_units should contain a valid reference date /
@@ -1002,9 +1003,9 @@ def main():
             try:
                 merger.merge_groups(shared=shared)
             except xr.MergeError as e:
-                exit("Merge error in DsGroup.merge_groups: " + str(e))
+                sys.exit("Merge error in DsGroup.merge_groups: " + str(e))
             except Exception as e:
-                exit("Unexpected error in DsGroup.merge_groups: " + str(e))
+                sys.exit("Unexpected error in DsGroup.merge_groups: " + str(e))
             
         group_by_dim[re.split(merger.stem,merger.name)[1]] = merger
 
@@ -1014,7 +1015,8 @@ def main():
             try:
                 [os.remove(f) for f in merger.filepaths]
             except OSError as e:
-                print("Failed to delete interim NC files. " + str(e))
+                if not shared['quiet']:
+                    print("Failed to delete interim NC files. " + str(e))
             else:
                 if shared['verbose']:
                     print("Removed interim files:", merger.filepaths)
@@ -1034,7 +1036,10 @@ def main():
     if verbose: print(f"Main app process {os.getpid()} took {end_time - start_time} seconds")
 
     if len(warnings) > 0:
-        sys.exit('\n'.join([str(e) for e in warnings]))
+        if shared['quiet']:
+            sys.exit('Quiet mode: warnings suppressed.')
+        else:
+            sys.exit('\n'.join([str(e) for e in warnings]))
     else:
         sys.exit(0)
 
