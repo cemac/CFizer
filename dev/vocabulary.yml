@@ -68,6 +68,7 @@
     standard_name: precipitation_flux
     units: kg m-2 s-1
   time_series*:
+    axis: T
     long_name: Time
     standard_name: time
     units: s
@@ -79,46 +80,54 @@
     long_name: Domain Minimum Vertical Velocity
     units: m s-1
   z:
+    axis: Z
     long_name: Altitude (Cell-Edges)
     standard_name: altitude
     units: m
   zn:
+    axis: Z
     long_name: Altitude (Cell-Centres)
     standard_name: altitude
     units: m
 1:
   ice_cloud_fraction:
     standard_name: mass_fraction_of_cloud_ice_in_air
-    units: 1
+    units: '1'
   liquid_cloud_fraction:
     standard_name: mass_fraction_of_cloud_liquid_water_in_air
-    units: 1
+    units: '1'
   liquid_mmr_mean:
     long_name: Cloud Liquid Water Mass Mixing Ratio
     standard_name: cloud_liquid_water_mixing_ratio
     units: kg kg-1
   pcond_mean:
+    long_name: Condensation Rate
     units: kg kg-1 s-1
   pracw_mean:
+    long_name: Accretion Rate
     units: kg kg-1 s-1
   praut_mean:
+    long_name: Autoconversion Rate
     units: kg kg-1 s-1
   prefn:
     long_name: Reference Pressure
     standard_name: reference_pressure
     units: Pa
   prevp_mean:
+    long_name: Evaporation Rate
     units: kg kg-1 s-1
   psedl_mean:
+    long_name: Sedimentation Rate (Cloud Water)
     units: kg kg-1 s-1
   psedr_mean:
+    long_name: Sedimentation Rate (Rain)
     units: kg kg-1 s-1
   rain_mmr_mean:
     long_name: Rain Water Mass Mixing Ratio
     units: kg kg-1
   rh_mean:
     standard_name: relative_humidity
-    units: 1
+    units: '1'
   rho:
     long_name: Density At W Levels
     standard_name: air_density
@@ -140,12 +149,13 @@
     long_name: Reference Potential Temperature
     standard_name: air_potential_temperature
   time_series*:
+    axis: T
     standard_name: time
     units: s
     updated_name: time
   total_cloud_fraction:
     standard_name: mass_fraction_of_cloud_condensed_water_in_air
-    units: 1
+    units: '1'
   u_wind_mean:
     long_name: Wind Speed In X Direction
     standard_name: x_wind
@@ -218,10 +228,12 @@
     long_name: Quartic Of Z Wind
     units: m4 s-4
   z:
+    axis: Z
     long_name: Altitude (Cell-Edges)
     standard_name: altitude
     units: m
   zn:
+    axis: Z
     long_name: Altitude (Cell-Centres)
     standard_name: altitude
     units: m
@@ -258,6 +270,7 @@
     standard_name: precipitation_flux_ at_sea_level
     units: kg m-2 s-1
   time_series*:
+    axis: T
     standard_name: time
     units: s
     updated_name: time
@@ -265,23 +278,27 @@
     long_name: Water Vapor Path
     units: kg m-2
   x:
+    axis: X
     long_name: X-Coordinate In Cartesian System (Cell-Centers)
     units: m
   y:
+    axis: Y
     long_name: Y-Coordinate In Cartesian System (Cell-Centers)
     units: m
   z:
+    axis: Z
     long_name: Altitude (Cell-Edges)
     standard_name: altitude
     units: m
   zn:
+    axis: Z
     long_name: Altitude (Cell-Centres)
     standard_name: altitude
     units: m
 3:
   p:
     long_name: Pressure
-    perturbation_to_absolute: true
+    perturbation_to_absolute: 'True'
     reference_variable: prefn
     standard_name: air_pressure
     units: Pa
@@ -294,7 +311,6 @@
     units: m-3
   q_rain_mass:
     long_name: Rain Water Mass Mixing Ratio
-    standard_name: mass_fraction_of_liquid_precipitation_in_air
     units: kg kg-1
   q_rain_number:
     long_name: Number Concentration Of Rain Particles In Air
@@ -305,11 +321,12 @@
     units: kg kg-1
   th:
     long_name: Potential Temperature
-    perturbation_to_absolute: true
+    perturbation_to_absolute: 'True'
     reference_variable: thref
     standard_name: air_potential_temperature
     units: K
   time_series*:
+    axis: T
     standard_name: time
     units: s
     updated_name: time
@@ -330,22 +347,28 @@
     standard_name: upward_air_velocity
     units: m s-1
   x:
+    axis: X
     long_name: X-Coordinate In Cartesian System (Cell-Centers)
     units: m
-  y:
-    long_name: Y-Coordinate In Cartesian System (Cell-Centers)
-    units: m
   xu:
+    axis: X
     long_name: X-Coordinate In Cartesian System (Cell-Edges)
     units: m
+  y:
+    axis: Y
+    long_name: Y-Coordinate In Cartesian System (Cell-Centers)
+    units: m
   yv:
+    axis: Y
     long_name: Y-Coordinate In Cartesian System (Cell-Edges)
     units: m
   z:
+    axis: Z
     long_name: Altitude (Cell-Edges)
     standard_name: altitude
     units: m
   zn:
+    axis: Z
     long_name: Altitude (Cell-Centres)
     standard_name: altitude
     units: m
