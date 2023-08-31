@@ -552,13 +552,16 @@ class MoncDs:
                 # Adding two xarray.DataArrays doesn't preserve attributes,
                 # so need to create new data array combining new data with
                 # existing attributes.
+                # print("Trying to build new data array from sum of perturbation & reference.")
+                # print("absolute:", absolute)
+                # print(absolute.data)
+                # print("existing:", self.ds[var])
                 self.ds[var] = xr.DataArray(
                     data=absolute.data,
                     coords=self.ds[var].coords,
                     dims=self.ds[var].dims,
                     name=self.ds[var].name,
-                    attrs=self.ds[var].attrs,
-                    indexes=self.ds[var].indexes
+                    attrs=self.ds[var].attrs
                 )
 
     def add_cf_attrs(self, **kwargs):
