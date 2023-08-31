@@ -841,7 +841,7 @@ def parse_arguments():
         # type=tf,
         # choices={True, False},
         default=False,
-        help='Set to True if multiple dimension sets are being merged, but you want to keep the single-dimension-set files as well.',
+        help='Set if multiple dimension sets are being merged, but you want to keep the single-dimension-set files as well.',
         required=False
     )
 
@@ -852,7 +852,7 @@ def parse_arguments():
         # type=tf,
         # choices=(True, False),
         default=False,
-        help='Set to True to report all progress to stdout.',
+        help='Set to report all progress to stdout.',
         required=False
     )
 
@@ -863,7 +863,7 @@ def parse_arguments():
         # type=tf,
         # choices=(True, False),
         default=False,
-        help='Set to True to suppress warnings being printed to stdout.',
+        help='Set to suppress warnings being printed to stdout.',
         required=False
     )
 
