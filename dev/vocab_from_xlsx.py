@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import openpyxl as xl
 import yaml
 import re
@@ -5,7 +7,7 @@ import os
 import os.path as op
 import argparse
 from cfunits import Units
-from setup import VOCAB_FIELDS
+from cfizer import VOCAB_FIELDS
 
 
 def vocab_from_xls(filepath: str) -> dict:
@@ -86,6 +88,11 @@ def vocab_from_xls(filepath: str) -> dict:
                 vocabulary[subset][var]['long_name'] = vocabulary[subset][var]['long_name'].title()
     [vocabulary.pop(e) for e in empty]
     return vocabulary
+
+
+def vocab_to_yaml(vocab: dict) -> str:
+
+    return filepath
 
 
 if __name__ == '__main__':
