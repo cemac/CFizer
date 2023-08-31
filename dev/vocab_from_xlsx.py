@@ -7,7 +7,12 @@ import os
 import os.path as op
 import argparse
 from cfunits import Units
-from cfizer import VOCAB_FIELDS
+import sys
+# os.chdir(op.join(os.getcwd(), 'dev'))
+# print(os.getcwd())
+sys.path.append(os.getcwd())  # This shouldn't be necessary once packaged
+# print(sys.path)
+from dev import VOCAB_FIELDS
 
 
 def vocab_from_xls(filepath: str) -> dict:
