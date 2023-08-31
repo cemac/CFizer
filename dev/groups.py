@@ -667,13 +667,15 @@ class DsGroup:
             # Call CF compliance function on dataset.
             try:
                 cf_ds = ds.cfize(shared=shared)  # xarray.Dataset
+                warnings += ds.warnings
             except (ConfigError or VocabError or AttributeError) as e:
-                errors.append(e)
+                errors.append('MoncDs.cfize: ' + str(e))
                 return {
                     'warnings': warnings,
                     'errors': errors
                 }
-            warnings += cf_ds.warnings
+            # except (VocabWarning or ConfigWarning) as e:
+            #     warnings.append('MoncDs.cfize: ' + str(e))
 
             # Check whether time variable name has changed
             self.time_var = ds.time_var # Update group's time_var to match 
@@ -764,8 +766,8 @@ class DsGroup:
         # return update_globals
         return {
             'update_group':{
-                'processed': group.processed, 
-                'time_var': group.time_var
+                'processed': self.processed, 
+                'time_var': self.time_var
             },
             'update_globals': update_globals,
             'warnings': warnings,

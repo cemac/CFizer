@@ -181,6 +181,8 @@ for dim, group in vocabulary.items():
                 to_drop.append(k)
                 continue
                 # raise KeyError(f'Vocabulary file contains invalid field: {k}')
+            if k == 'units':
+                vocabulary[dim][variable][k] = str(v)  # This ensures cfunits.Units.isvalid works correctly on fractions (units = 1).
             if VOCAB_FIELDS[k] is not None:
                 if isinstance(VOCAB_FIELDS[k], set):
                     if v not in VOCAB_FIELDS[k]:

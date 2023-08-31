@@ -248,9 +248,10 @@ class MoncDs:
 
     def update_units(self,
                      var: str,
-                     time_units: TimeUnits,
+                     shared: dict,
                      updates:dict=None):
         '''Add/update units for specified variable.'''
+        time_units = shared['time_units']
         if var in CONFIG['new_coordinate_variables']:
             if not updates:
                 updates = CONFIG['new_coordinate_variables'][var]['attributes']
@@ -289,8 +290,8 @@ class MoncDs:
                         #     f"dimension {self.n_dims}."
                         # )
                         raise VocabError(
-                            f"{self.ds[var].attrs['units']}: invalid units for "
-                            f"variable {var} in dataset "
+                            f"update_units: {self.ds[var].attrs['units']}: "
+                            f"invalid units for variable {var} in dataset "
                             f"with title {self.ds.attrs['title']}, and no "
                             f"new units specified in vocabulary under "
                             f"dimension {self.n_dims}."
@@ -333,8 +334,8 @@ class MoncDs:
                     new_units = Units(updates['units'])
                 else:
                     raise VocabError(
-                        f"Invalid units specified in vocabulary for "
-                        f"({self.n_dims}d) variable {var}."
+                        f"update_units: Invalid units specified in vocabulary "
+                        f"for ({self.n_dims}d) variable {var}."
                     )
                 
                 # If spatial coordinate variable, add/update any specified or 
@@ -346,12 +347,21 @@ class MoncDs:
                         self.ds[var].attrs['axis'] = CONFIG[
                             'new_coordinate_variables'][var][
                                 'attributes']['axis']
+                    elif var[0].lower() in {'x', 'y', 'z'}:
+                        if not shared['quiet']:
+                            print(
+                                f"MoncDs.update_units: assumed axis "
+                                f"{var[0].upper()} for variable {var}."
+                            )
+                        self.ds[var].attrs['axis'] = var[0].upper()
                     elif 'axis' not in self.ds[var].attrs:
                         # Prompt user if required.
                         raise ConfigError(
-                            f"Axis should be specified for spatial coordinate "
-                            f"variables. No axis attribute found in dataset or "
-                            f"configuration file for variable {var}."
+                            f"update_units: Axis should be specified for "
+                            f"spatial coordinate "
+                            f"variables. No axis attribute found in dataset, "
+                            f"vocabulary or configuration file for variable "
+                            f"{var}."
                         )
 
                     # Add positive attribute if required/specified (not expected).
@@ -410,7 +420,7 @@ class MoncDs:
                 #     f"(dimension {self.n_dims})."
                 # )
                 raise VocabError(
-                    f"{var} not found in vocabulary "
+                    f"cfize_variables: {var} not found in vocabulary "
                     f"(dimension {self.n_dims})."
                 )
                 # # check/update any units already present.
@@ -450,15 +460,20 @@ class MoncDs:
 
             # check at least one present
             if 'standard_name' not in self.ds[var].attrs and 'long_name' not in self.ds[var].attrs:
+                # self.warnings.append(VocabError(
+                #     f"{var}: CF requires at least one of standard_name and "
+                #     f"long_name to be assigned to each variable."
+                # ))
                 raise VocabError(
-                    "CF requires at least one of standard_name and "
-                    "long_name to be assigned to each variable."
+                    f"cfize_variables: {var}: CF requires at least one of "
+                    f"standard_name and long_name to be assigned to each "
+                    f"variable."
                 )
             
             # Add/update units
             self.update_units(var=var, 
                               updates=updates, 
-                              time_units=shared['time_units'])
+                              shared=shared)
             
             # Update variable name if specified.
             if 'updated_name' in updates:
@@ -474,7 +489,8 @@ class MoncDs:
             if 'perturbation_to_absolute' in updates and updates['perturbation_to_absolute']:
                 if 'reference_variable' not in updates:
                     raise VocabError(
-                        f"{variable}: If perturbation_to_absolute is True, "
+                        f"cfize_variables: {variable}: If "
+                        f"perturbation_to_absolute is True, "
                         f"reference_variable must contain the name of the "
                         f"variable containing reference value(s).")
                 
@@ -518,8 +534,8 @@ class MoncDs:
                     #     f"specified in config.yml."
                     # )
                     self.warnings.append(ConfigWarning(
-                        f"{attr} must be included as a global attribute, "
-                        f"specified in config.yml."
+                        f"add_cf_attrs: {attr} must be included as a global "
+                        f"attribute, specified in config.yml."
                     ))
 
     def get_options(self, fields: list|set|tuple = None) -> dict:

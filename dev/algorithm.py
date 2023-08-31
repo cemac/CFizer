@@ -100,7 +100,7 @@ def process_large(
             # Adds any missing global attributes required by CF convention
             # Derives any required global attributes from options database
         try:
-            monc_ds = monc_ds.cfize(shared=shared)
+            monc_ds.cfize(shared=shared)
         except (ConfigError or VocabError or AttributeError) as e:
             errors.append('process_large: MoncDs.cfize: ' + str(e))
             return {
@@ -222,7 +222,7 @@ def cf_merge(group: DsGroup,
             'errors': errors
         }
     else:
-        if 'error' in rtn:
+        if 'error' in rtn and rtn['error']:
             errors.append('cf_merge: DsGroup.merge_times: ' + str(rtn['error']))
             return {
                 'warnings': warnings,
@@ -242,7 +242,12 @@ def cf_merge(group: DsGroup,
             'processed': group.processed, 
             'time_var': group.time_var
         }
-        errors += 'cf_merge: DsGroup.cfize_and_save: ' + '; '.join([str(e) for e in rtn['errors']]) if 'errors' in rtn else []
+        if 'errors' in rtn and rtn['errors']:
+            errors.append(
+                'cf_merge: DsGroup.cfize_and_save: ' + '; '.join(
+                    [str(e) for e in rtn['errors']]
+                )
+            )
         warnings += rtn['warnings'] if 'warnings' in rtn else []
     
     return {
@@ -319,7 +324,7 @@ def process_parallel(
                 for d in {v['dim'] for v in reference_vars.values()}:
                     for r in results[d]:
                         result_dict = r.get()
-                        if 'errors' in result_dict:
+                        if 'errors' in result_dict and result_dict['errors']:
                             err_msg = '; '.join([str(e) for e in result_dict['errors']])
                             sys.exit(err_msg)
                         if 'warnings' in result_dict:
@@ -383,7 +388,7 @@ def process_parallel(
                         title=title,
                         shared=shared
                     )
-                    if 'errors' in r:
+                    if 'errors' in r and r['errors']:
                         exit('; '.join([str(e) for e in r['errors']]))
                     if 'warnings' in r:
                         warnings += r['warnings']
@@ -418,7 +423,7 @@ def process_parallel(
                     # [update_group, 
                     #  update_globals] = result.get()
                     r = result.get()
-                    if 'errors' in r:
+                    if 'errors' in r and r['errors']:
                         exit('; '.join([str(e) for e in r['errors']]))
                     if 'warnings' in r:
                         warnings += r['warnings']
@@ -479,7 +484,7 @@ def process_parallel(
                     # [update_group, 
                     #  update_globals] = result.get()
                     r = result.get()
-                    if 'errors' in r:
+                    if 'errors' in r and r['errors']:
                         exit('; '.join([str(e) for e in r['errors']]))
                     if 'warnings' in r:
                         warnings += r['warnings']
@@ -626,7 +631,7 @@ def process_serial(
         elif group.action == 'merge':
             try:
                 rtn = group.merge_times(shared=shared)
-                if 'error' in rtn:
+                if 'error' in rtn and rtn['error']:
                     sys.exit('process_serial: DsGroup.merge_times' + str(rtn['error']))
 
             # group.processed = cf_merge(
@@ -635,7 +640,7 @@ def process_serial(
             #         target_dir=target_dir
             # )
                 rtn = group.cfize_and_save(shared=shared)
-                if 'errors' in rtn:
+                if 'errors' in rtn and rtn['errors']:
                     sys.exit('process_serial: DsGroup.cfize_and_save: ' + 
                              '; '.join([str(e) for e in rtn['errors']]))
                 if 'warnings' in rtn:
