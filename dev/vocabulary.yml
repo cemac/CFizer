@@ -280,7 +280,7 @@
     units: m
 3:
   p:
-    long_name: Pressure Perturbation
+    long_name: Pressure
     perturbation_to_absolute: true
     reference_variable: prefn
     standard_name: difference_of_air_pressure_from_model_reference
@@ -304,7 +304,7 @@
     standard_name: humidity_mixing_ratio
     units: kg kg-1
   th:
-    long_name: Potential Temperature Perturbation
+    long_name: Potential Temperature
     perturbation_to_absolute: true
     reference_variable: thref
     units: K
