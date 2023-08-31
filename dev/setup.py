@@ -185,7 +185,7 @@ for dim, group in vocabulary.items():
                 vocabulary[dim][variable][k] = str(v)  # This ensures cfunits.Units.isvalid works correctly on fractions (units = 1).
             if VOCAB_FIELDS[k] is not None:
                 if isinstance(VOCAB_FIELDS[k], set):
-                    if v not in VOCAB_FIELDS[k]:
+                    if type(list(VOCAB_FIELDS[k])[0])(v) not in VOCAB_FIELDS[k]:
                         raise ValueError(
                             f'setup: Variable {variable}: {v} is not a valid '
                             f'value for {k}. Valid values: {VOCAB_FIELDS[k]}'
