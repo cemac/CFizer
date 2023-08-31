@@ -582,8 +582,9 @@ class MoncDs:
                     #     f"specified in config.yml."
                     # )
                     self.warnings.append(ConfigWarning(
-                        f"add_cf_attrs: {attr} must be included as a global "
-                        f"attribute, specified in config.yml."
+                        f"add_cf_attrs: CF-1.10, section 2.6.2, recommends "
+                        f"{attr} be included as a global attribute. This can "
+                        f"be specified in config.yml."
                     ))
 
     def get_options(self, fields: list|set|tuple = None) -> dict:
