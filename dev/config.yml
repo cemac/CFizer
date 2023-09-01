@@ -2,6 +2,7 @@ institution: University of Leeds
 source: Leeds MONC version x
 references: None
 comment: None
+reference_time: None  # ISO format
 global_to_variable:
   MONC timestep:
     units: s

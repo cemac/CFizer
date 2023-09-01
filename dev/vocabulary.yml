@@ -267,7 +267,7 @@
     units: J m-2
   surface_precip:
     long_name: Surface Precipitation
-    standard_name: precipitation_flux_ at_sea_level
+    standard_name: precipitation_flux_at_sea_level
     units: kg m-2 s-1
   time_series*:
     axis: T
