@@ -3,12 +3,13 @@ import os.path as op
 import os
 import xarray as xr
 from glob import iglob
-from setup import *
+from startup import *
 import re
 # from units import TimeUnits
 from cfize_ds import MoncDs
 from utils import type_from_str #, performance_time
 from time import perf_counter, strftime, localtime
+from datetime import datetime
 
 
 def stem_str(*args: str):
@@ -148,14 +149,13 @@ def globals_to_vars(ds: xr.Dataset,
             # set coords as per other case below.
             data = type_from_str(ds.attrs[global_attr])
             coords = [last_time_point]
-
         else:
             data = [type_from_str(ds.attrs[global_attr])]*len(ds[group.time_var].data)
             coords = ds[group.time_var]
 
         # try:
         vars[global_attr] = xr.DataArray(
-            name=global_attr,
+            name=global_attr.replace(' ', '_').replace('-', '_'),
             data=data,
             coords={time_var: coords},
             dims=(time_var,),
@@ -465,7 +465,7 @@ class DsGroup:
                 return {'error': 'DsGroups.merge_times: globals_to_vars :' + str(e), 'log': log}
             for name, array in new_vars.items():
                 ds.attrs.pop(name)
-                processing[i] = ds.assign({name: array})  # Need to assign to original dataset in list rather than placeholder ds.
+                processing[i] = ds.assign({array.name: array})  # Need to assign to original dataset in list rather than placeholder ds.
                 
             # Store largest value per group of any 'one per group' global 
             # attributes, as value to assign to merged dataset.
@@ -552,6 +552,7 @@ class DsGroup:
         """
         log = []
         if shared['verbose']: 
+            start_time = perf_counter()
             log.append(
                 f"{strftime('%H:%M:%S', localtime())} "
                 f"Process {os.getpid()}: merging groups - {self.name} with "
@@ -610,11 +611,11 @@ class DsGroup:
                     hold_attrs[attr] = value
 
         # xarray.Dataset.merge -> new dataset.
-        start_time = perf_counter()
+        if shared['verbose']: m_time = perf_counter()
         merged = merge_dimensions(*self.to_process)
-        self.log.append(
+        if shared['verbose']: log.append(
             f"         Process {os.getpid()}: merge_dimensions took "
-            f"{perf_counter() - start_time} seconds."
+            f"{perf_counter() - m_time} seconds."
         )
         
         # Close source datasets
@@ -650,10 +651,10 @@ class DsGroup:
             k:{
                 'dtype': v.dtype,
                 '_FillValue': None,
-                COMPRESSION[1]: COMPRESSION[0],
-                'complevel': COMPRESSION[2]
+                CONFIG['compression']['type']: CONFIG['compression']['on'],
+                'complevel': CONFIG['compression']['level']
             } for k, v in merged.variables.items()
-        } if COMPRESSION[0] else {
+        } if CONFIG['compression']['on'] else {
             k:{
                 'dtype': v.dtype,
                 '_FillValue': None
@@ -679,6 +680,13 @@ class DsGroup:
         merged.close()
 
         self.processed = [filepath]
+
+        if shared['verbose']: 
+            log.append(
+                f"         Process {os.getpid()}: DsGroup.merge_groups "
+                f"took {perf_counter() - start_time} seconds."
+            )
+            
         return (self.processed, log)
         
     def cf_only(self, 
@@ -762,6 +770,15 @@ class DsGroup:
             warnings += ds.warnings
             self.log += ds.log
 
+            # Ensure all attributes comply with CF recommendation to use only
+            # alphanumeric and underscore characters.
+            replace_attr = {attr for attr in cf_ds.attrs 
+                            if ' ' in attr or '-' in attr}
+            for attr in replace_attr:
+                cf_ds.attrs[
+                    attr.replace(' ', '_').replace('-', '_')
+                ] = cf_ds.attrs.pop(attr)
+            
             # Check whether time variable name has changed
             self.time_var = ds.time_var # Update group's time_var to match 
                                         # any update to merged dataset's.
@@ -798,36 +815,32 @@ class DsGroup:
                             perturbation_dim: {perturbation_var: add_to_var}
                         }
             
+            # TODO: This is where history attribute should be appended
+            
             # Set encoding
             # Encoding needs to be set, with each variable's encoding 
             # specified. Otherwise, _FillValue is applied to all, including 
             # coordinates, the latter contravening CF Conventions.
-            # encodings = {
-            #     k:{
-            #         'dtype': v.dtype,
-            #         '_FillValue': None
-            #     } for k, v in cf_ds.variables.items()
-            # }  # if k == 'options_database' or k in ds.ds.coords
             encodings = {
-            k:{
-                'dtype': v.dtype,
-                '_FillValue': None,
-                COMPRESSION[1]: COMPRESSION[0],
-                'complevel': COMPRESSION[2]
-            } for k, v in cf_ds.variables.items()
-        } if COMPRESSION[0] else {
-            k:{
-                'dtype': v.dtype,
-                '_FillValue': None
-            } for k, v in cf_ds.variables.items()
-        }  # if k == 'options_database' or k in ds.ds.coords
+                k:{
+                    'dtype': v.dtype,
+                    '_FillValue': None,
+                    CONFIG['compression']['type']: CONFIG['compression']['on'],
+                'complevel': CONFIG['compression']['level']
+                } for k, v in cf_ds.variables.items()
+            } if CONFIG['compression']['on'] else {
+                k:{
+                    'dtype': v.dtype,
+                    '_FillValue': None
+                } for k, v in cf_ds.variables.items()
+            }  # if k == 'options_database' or k in ds.ds.coords
 
             # Save dataset to NetCDF
             # xarray docs report engine='h5netcdf' may sometimes be 
             # faster. However, it doesn't natively handle the 
             # various string length types used here.
             if shared['verbose']: w_start = perf_counter()
-            if COMPRESSION[0]:
+            if CONFIG['compression']['on']:
                 cf_ds.to_netcdf(
                     path=filepath, 
                     encoding=encodings,

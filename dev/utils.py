@@ -1,8 +1,29 @@
 # from time import perf_counter
 # import os
 import numpy as np
+import sys
+import xarray
+import datetime, time
 
 
+def str_to_class(module: str, class_name: str):
+    '''
+    Adapted from https://stackoverflow.com/a/1176180
+    '''
+    return getattr(sys.modules[module], class_name)
+
+
+def first_rest(first_var: str, rest_var: str, module_type: str, i: int, ds_list:list[xarray.Dataset]):
+    # print("first_rest received:", first_var, rest_var, np_type, i, ds_list)
+    var = first_var if i == 0 else rest_var
+    if var in ds_list[0].variables:
+        return str_to_class(*module_type.split('.'))(ds_list[0][var].data.tolist())
+    elif var in ds_list[0].attrs:
+        return str_to_class(*module_type.split('.'))(ds_list[0].attrs[var])
+    else:
+        raise KeyError(
+            "Variable(s) not found in dataset's variables or attributes."
+        )
 # def performance_time(func):
 #     def wrapper(*args, **kwargs):
 #         start_time = perf_counter()

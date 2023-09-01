@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 
 # Initialise, incl. from VOCAB & CONFIG files.
-from setup import *
+# from configure import *
+from startup import *  # tune this to avoid importing unneeded variables.
 import xarray as xr
 import os
 import os.path as op
@@ -89,7 +90,7 @@ def process_large(
             }
         for name, array in new_vars.items():
             dataset.attrs.pop(name)
-            dataset = dataset.assign({name: array})  # Overwrite with updated
+            dataset = dataset.assign({array.name: array})  # Overwrite with updated
 
         # Create MoncDs object for futher processing, and update dataset's title
         try:
@@ -159,6 +160,15 @@ def process_large(
                     'log': log
                 }
 
+        # Ensure all attributes comply with CF recommendation to use only
+        # alphanumeric and underscore characters.
+        replace_attr = {attr for attr in ds.attrs 
+                        if ' ' in attr or '-' in attr}
+        for attr in replace_attr:
+            ds.attrs[
+                attr.replace(' ', '_').replace('-', '_')
+            ] = ds.attrs.pop(attr)
+        
         # set filepath
         filepath = op.join(
             target_dir, f"{ds.attrs['title']}.nc"
@@ -168,10 +178,10 @@ def process_large(
             k:{
                 'dtype': v.dtype,
                 '_FillValue': None,
-                COMPRESSION[1]: COMPRESSION[0],
-                'complevel': COMPRESSION[2]
+                CONFIG['compression']['type']: CONFIG['compression']['on'],
+                'complevel': CONFIG['compression']['level']
             } for k, v in ds.variables.items()
-        } if COMPRESSION[0] else {
+        } if CONFIG['compression']['on'] else {
             k:{
                 'dtype': v.dtype,
                 '_FillValue': None
@@ -195,7 +205,7 @@ def process_large(
             writers.append(ds_to_nc_dask(ds=ds,
                                     filepath=filepath,
                                     encodings=encodings,
-                                    compress=COMPRESSION[0],
+                                    compress=CONFIG['compression']['on'],
                                     shared=shared
                                     ))
             if shared['verbose']: log.append(
@@ -1076,9 +1086,12 @@ def main():
     # Attempt to derive time unit info, if not already supplied at command line.
     # Assume time units will be common to all datasets in directory.
     if not time_units:
-        time_units = time_units_from_input(input_files) if input_files else None
-        if shared['verbose'] and time_units:
-            print(strftime('%H:%M:%S', localtime()), 'Time units found in input file:', (time_units.formatted()))
+        if FROM_INPUT_FILE and 'reftime' in FROM_INPUT_FILE:
+            time_units = time_units_from_input(input_files) if input_files else None
+            if shared['verbose'] and time_units:
+                print(strftime('%H:%M:%S', localtime()), 'Time units found in input file:', (time_units.formatted()))
+        elif 'since' in default_time_unit:
+            time_units = TimeUnits(default_time_unit)
 
     # NOTE: by this stage, time_units should contain a valid reference date /
     # datetime and calendar. The base units will be set to the default 
@@ -1127,7 +1140,7 @@ def main():
         merger = DsGroup(groups=groups, shared=shared)
         if merger.log:
             print(
-                ''.join([entry + '/n' for entry in merger.log])
+                ''.join([entry + '\n' for entry in merger.log])
             )
         
         if merger.action == 'merge_groups':
@@ -1180,11 +1193,14 @@ def main():
     if verbose: print(f"         Main app process {os.getpid()} took "
                       f"{end_time - start_time} seconds.")
 
+    print()  # Add space for warnings
+
     if len(warnings) > 0:
         if shared['quiet']:
-            sys.exit('\nQuiet mode: warnings suppressed.')
+            sys.exit('Quiet mode: warnings suppressed.')
         else:
-            sys.exit('\n' + '\n'.join([str(e) for e in warnings]))
+            # Use set to exclude duplicate warnings.
+            sys.exit('\n'.join(set([str(e) for e in warnings])))
     else:
         sys.exit(0)
 

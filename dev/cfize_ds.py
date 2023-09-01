@@ -1,10 +1,12 @@
 import xarray as xr
 from units import TimeUnits, format_units
-from setup import *
+from startup import *
 from utils import type_from_str, generate_coords #, performance_time
 from cfunits import Units
 from dask.delayed import Delayed
 from time import perf_counter, strftime, localtime
+from datetime import datetime
+import numpy as np
 # from cfizer import OPTIONS_DATABASE, CONFIG
 
 
@@ -185,7 +187,7 @@ class MoncDs:
         # Add global attributes recommended by CF (some values set at 
         # initialisation)
         self.add_cf_attrs()
-        
+
         # Add any missing coordinates
         self.missing_coords()
         
@@ -193,7 +195,10 @@ class MoncDs:
         # dataset:
         var_list = set(self.ds.variables)
         var_list.discard(OPTIONS_DATABASE['variable'])
-        [var_list.discard(v) for v in CONFIG['global_to_variable'].keys()]
+        [var_list.discard(v) for v in [
+            k.replace(' ', '_').replace('-', '_') 
+            for k in CONFIG['global_to_variable'].keys()
+        ]]  # Replacement needed to account for updated name.
         self.cfize_variables(variables=var_list, shared=shared)
 
         if shared['verbose']: 
@@ -614,9 +619,12 @@ class MoncDs:
             # TODO: <version> and <url> and any other required data will be assigned during packaging.
 
             defaults = {}  # {attr: None for attr in CF_ATTRIBUTES}
-            # defaults['title'] = kwargs['title'] if 'title' in kwargs
-            defaults['history'] = f'{datetime.now().isoformat(timespec="minutes", sep=" ")}: output files processed using CFizer version <version>, <url>.'
-            defaults['conventions'] = f"CF-{CF_VERSION}"
+            
+            # TODO: history attribute should be an audit trail, and so include 
+            # whatever processing is done to each file, and ideally updated just
+            # prior to saving NetCDF file.
+            defaults['history'] = f'{datetime.now().isoformat(timespec="minutes", sep=" ")}: MONC output files converted by CFizer version {VERSION}, https://github.com/cemac/CFizer.'
+            defaults['Conventions'] = f"CF-{CF_VERSION}"
             for attr in CF_ATTRIBUTES:
                 # Only overwrite existing value if a new value was specified in
                 # config file.
@@ -671,8 +679,10 @@ class MoncDs:
                     if k.decode('utf-8') in fields}
         
         # Drop any options that are reset by DEPHY, if used.
-        if (all([opt in options for opt in DEPHY_OPTIONS]) and
-            all([options[opt] for opt in DEPHY_OPTIONS])):
+        if all([
+            opt in options and options[opt] == val 
+            for opt, val in DEPHY_OPTIONS.items()
+        ]):
             for a in DROP_FOR_DEPHY:
                 if a in options:
                     options.pop(a)
