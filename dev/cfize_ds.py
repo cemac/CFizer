@@ -37,7 +37,7 @@ def split_ds(dataset: xr.Dataset,
         #     f'{dataset.attrs["title"]} by {var}.'
         # )
     base_title = dataset.attrs['title'].strip('_ +,.&') + '_'
-    grouped = {point: ds for (point, ds) in dataset.groupby(var)}
+    grouped = {point: ds.copy(deep=True) for (point, ds) in dataset.groupby(var)}
     for point, ds in grouped.items():
         # Append relevant coordinate value to title
         grouped[point].attrs['title'] = base_title + str(int(point))
