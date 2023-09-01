@@ -133,7 +133,7 @@ def process_large(
             log += split_log
             log.append(
                 f"split_ds returned these datasets:\n" +
-                "\n".join(processed) +
+                "\n".join([str(ds) for ds in processed]) +
                 f"\n with titles " +
                 ", ".join(ds.attrs['title'] for ds in processed)
             )
@@ -1155,8 +1155,10 @@ def main():
                 if shared['verbose']:
                     print(
                         f"{strftime('%H:%M:%S', localtime())} Removed interim "
-                        f"files:\n", 
-                        "\n".join([op.basename(f) for f in merger.filepaths])
+                        f"files:\n        ", 
+                        "\n         ".join([
+                            op.basename(f) for f in merger.filepaths
+                        ])
                     )
 
     # Output list of actions taken: each list of merged files & what file they were merged into; each split file and list of files it was split into; each file processed without merge/split & what its new version is called.
@@ -1168,7 +1170,7 @@ def main():
             f"{group.action + ' --> ' if group.action and group.action != 'merge_groups' else ''}cfize --> "
             f"{[op.basename(path) for path in group.processed]}"
         )
-        
+    print()
     # Garbage collection if required.
 
     end_time = perf_counter()
