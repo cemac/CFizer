@@ -291,7 +291,8 @@ def cf_merge(group: DsGroup,
         errors.append('cf_merge: DsGroup.cfize_and_save: ' + str(e))
         return {
             'warnings': warnings,
-            'errors': errors
+            'errors': errors,
+            'log': log
         }
     else:
         update_globals = rtn['update_globals'] if 'update_globals' in rtn else None
@@ -385,27 +386,32 @@ def process_parallel(
                     for r in results[d]:
                         result_dict = r.get()
                         if 'log' in result_dict and result_dict['log']:
-                            print(
+                            print(''.join(
                                 [entry + '\n' for entry in result_dict['log']]
-                            )
+                            ))
                         if 'errors' in result_dict and result_dict['errors']:
                             err_msg = '; '.join([str(e) for e in result_dict['errors']])
                             sys.exit(err_msg)
                         if 'warnings' in result_dict:
                             warnings += result_dict['warnings']
-                        update_group = result_dict['update_group'] if 'update_group' in result_dict else None
-                        update_globals = result_dict['update_globals'] if 'update_globals' in result_dict else None
-                        if groups[d].processed:
-                            groups[d].processed = list({
-                                *update_group['processed'], 
-                                *groups[d].processed
-                            })
+                        if 'update_group' in result_dict:
+                            update_group = result_dict['update_group']
+                            if groups[d].processed:
+                                groups[d].processed = list({
+                                    *update_group['processed'], 
+                                    *groups[d].processed
+                                })
+                            else:
+                                groups[d].processed = update_group['processed']
+                            groups[d].time_var = update_group['time_var']
                         else:
-                            groups[d].processed = update_group['processed']
-                        groups[d].time_var = update_group['time_var']
+                            update_group = None
+                        update_globals = result_dict['update_globals'] if 'update_globals' in result_dict else None
                         if update_globals:
-                            if 'vocabulary' in update_globals:
-                                [[shared['vocabulary'][v_dim][update_var].update(update_dict) for update_var, update_dict in updates.items()] for v_dim, updates in update_globals['vocabulary'].items()]
+                            if 'vocabulary' in update_globals: 
+                                [[shared['vocabulary'][v_dim][update_var].update(update_dict) 
+                                  for update_var, update_dict in updates.items()] 
+                                  for v_dim, updates in update_globals['vocabulary'].items()]
                                 # for v_dim, updates in update_globals['vocabulary'].items():
                                 #     for update_var, update_dict in updates.items():
                                 #         shared['vocabulary'][v_dim][update_var].update(update_dict)
@@ -493,25 +499,28 @@ def process_parallel(
                     # [update_group, 
                     #  update_globals] = result.get()
                     r = result.get()
-                    if 'log' in result and result['log']:
-                        print(
-                            [entry + '\n' for entry in result['log']]
-                        )
+                    if 'log' in r and r['log']:
+                        print(''.join(
+                            [entry + '\n' for entry in r['log']]
+                        ))
                     if 'errors' in r and r['errors']:
                         sys.exit('; '.join([str(e) for e in r['errors']]))
                     if 'warnings' in r:
                         warnings += r['warnings']
-                    update_group = r['update_group'] if 'update_group' in r else None
-                    update_globals = r['update_globals'] if 'update_globals' in r else None
-                    if groups[dim].processed:
-                        groups[dim].processed = list(
-                            {*groups[dim].processed,
-                             *update_group['processed']}
-                        )
+                    if 'update_group' in r:
+                        update_group = r['update_group']
+                        if groups[dim].processed:
+                            groups[dim].processed = list(
+                                {*groups[dim].processed,
+                                *update_group['processed']}
+                            )
+                        else:
+                            groups[dim].processed = update_group['processed']
+                        groups[dim].time_var = update_group['time_var']
                     else:
-                        groups[dim].processed = update_group['processed']
-                    groups[dim].time_var = update_group['time_var']
-
+                        update_group = None
+                    update_globals = r['update_globals'] if 'update_globals' in r else None
+                    
             # If group is to be merged:
             elif group.action == 'merge':
                 # results[dim] = pool.apply_async(
@@ -561,21 +570,25 @@ def process_parallel(
                     # [update_group, 
                     #  update_globals] = result.get()
                     r = result.get()
-                    if 'log' in result and result['log']:
-                        print(
-                            [entry + '\n' for entry in result['log']]
-                        )
+                    if 'log' in r and r['log']:
+                        print(''.join(
+                            [entry + '\n' for entry in r['log']]
+                        ))
                     if 'errors' in r and r['errors']:
                         sys.exit('; '.join([str(e) for e in r['errors']]))
                     if 'warnings' in r:
                         warnings += r['warnings']
-                    update_group = r['update_group'] if 'update_group' in r else None
-                    update_globals = r['update_globals'] if 'update_globals' in r else None
-                    groups[dim].processed = list(
+                    if 'update_group' in r:
+                        update_group = r['update_group']
+                        groups[dim].processed = list(
                             {*groups[dim].processed,
                              *update_group['processed']}
                         )
-                    groups[dim].time_var = update_group['time_var']
+                        groups[dim].time_var = update_group['time_var']
+                    else:
+                        update_group = None
+                    update_globals = r['update_globals'] if 'update_globals' in r else None
+                    
                 # [groups.update({dim: result.get()[0]}) for result in results[dim]]
                 # groups[dim].processed = [
                 #     result.get() for result in results[dim]
