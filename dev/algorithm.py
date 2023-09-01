@@ -461,6 +461,10 @@ def process_parallel(
                         title=title,
                         shared=shared
                     )
+                    if 'log' in r and r['log']:
+                        print(''.join(
+                            [entry + '\n' for entry in r['log']]
+                        ))
                     if 'errors' in r and r['errors']:
                         sys.exit('; '.join([str(e) for e in r['errors']]))
                     if 'warnings' in r:
@@ -1107,7 +1111,7 @@ def main():
         merger = DsGroup(groups=groups, shared=shared)
         if merger.log:
             print(
-                [entry + '/n' for entry in merger.log]
+                ''.join([entry + '/n' for entry in merger.log])
             )
         
         if merger.action == 'merge_groups':
@@ -1119,7 +1123,7 @@ def main():
             except Exception as e:
                 sys.exit("Unexpected error in DsGroup.merge_groups: " + str(e))
             if log:
-                print(entry + '\n' for entry in log)
+                print(''.join([entry + '\n' for entry in log]))
             
         group_by_dim[re.split(merger.stem,merger.name)[1]] = merger
 
