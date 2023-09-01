@@ -127,14 +127,14 @@ def process_large(
         if group.action == 'split':
             # Split dataset by time-point, yielding multiple 
             # new datasets. Append time to titles.
-            (processed, split_log) = split_ds(dataset=monc_ds.ds, 
-                                var=monc_ds.time_var,
-                                shared=shared)
+            (processed, split_log) = split_ds(
+                dataset=monc_ds.ds,
+                shared=shared, 
+                var=monc_ds.time_var
+            )
             log += split_log
             log.append(
-                f"split_ds returned these datasets:\n" +
-                "\n".join([str(ds) for ds in processed]) +
-                f"\n with titles " +
+                f"split_ds returned datasets with titles " +
                 ", ".join(ds.attrs['title'] for ds in processed)
             )
             # processed only ever needs to hold latest collection of datasets.

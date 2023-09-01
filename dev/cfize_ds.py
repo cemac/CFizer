@@ -52,6 +52,10 @@ def split_ds(dataset: xr.Dataset,
             # )
     split = list(grouped.values())
     log.append(
+        "Datasets about to be returned by split_ds have titles:",
+        "; ".join([ds.attrs['title'] for ds in split])
+    )
+    log.append(
         f"         Process {os.getpid()}: split_ds took "
         f"{perf_counter() - start_time} seconds."
     )
