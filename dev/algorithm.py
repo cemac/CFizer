@@ -131,6 +131,12 @@ def process_large(
                                 var=monc_ds.time_var,
                                 shared=shared)
             log += split_log
+            log.append(
+                f"split_ds returned these datasets:\n" +
+                "\n".join(processed) +
+                f"\n with titles " +
+                ", ".join(ds.attrs['title'] for ds in processed)
+            )
             # processed only ever needs to hold latest collection of datasets.
         else:
             processed = monc_ds.ds  # Will this persist after context of ds ends?
