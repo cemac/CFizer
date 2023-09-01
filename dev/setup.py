@@ -46,7 +46,7 @@ class VocabWarning(Exception):
 verbose = False
 quiet = False
 
-COMPRESSION = (True, 'zlib', 1) # True/False, compression type, complevel (1:9)
+COMPRESSION = (True, 'zlib', 2) # True/False, compression type, complevel (1:9)
     # See https://unidata.github.io/netcdf4-python/efficient-compression-of-netcdf-variables
 '''
 Only lossless compression is considered here; all precision is maintained.

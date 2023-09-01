@@ -1,7 +1,7 @@
 import xarray as xr
 from units import TimeUnits, format_units
 from setup import *
-from utils import type_from_str, generate_coords, performance_time
+from utils import type_from_str, generate_coords #, performance_time
 from cfunits import Units
 from dask.delayed import Delayed
 from time import perf_counter
@@ -19,32 +19,52 @@ def is_monc(dataset: xr.Dataset) -> bool:
     return MONC_ID_ATTR in set(dataset.attrs).union(set(dataset.variables))
 
 
-@performance_time
-def split_ds(dataset: xr.Dataset, shared: dict, var: str = 'time') -> list[xr.Dataset]:
+# @performance_time
+def split_ds(dataset: xr.Dataset, 
+             shared: dict, 
+             var: str = 'time') -> tuple[list[xr.Dataset], str]:
+    start_time = perf_counter()
+    log = []
     if var not in dataset.dims:
         raise AttributeError(f'split_ds: {var} not in dataset dimensions.')
-    if shared['verbose']: print(
-        f'Process {os.getpid()}: splitting dataset {dataset.attrs["title"]} '
-        f'by {var}.'
-    )
+    if shared['verbose']: 
+        log.append(
+            f'Process {os.getpid()}: splitting dataset '
+            f'{dataset.attrs["title"]} by {var}.'
+        )
+        # print(
+        #     f'Process {os.getpid()}: splitting dataset '
+        #     f'{dataset.attrs["title"]} by {var}.'
+        # )
     base_title = dataset.attrs['title'].strip('_ +,.&') + '_'
     grouped = {point: ds for (point, ds) in dataset.groupby(var)}
     for point, ds in grouped.items():
         # Append relevant coordinate value to title
         grouped[point].attrs['title'] = base_title + str(int(point))
-        if shared['verbose']: print(
+        if shared['verbose']: 
+            log.append(
                 f"Process {os.getpid()}: Created new dataset with title, "
-                f"{grouped[point].attrs['title']}")
+                f"{grouped[point].attrs['title']}"
+            )
+            # print(
+            #     f"Process {os.getpid()}: Created new dataset with title, "
+            #     f"{grouped[point].attrs['title']}"
+            # )
     split = list(grouped.values())
-    return split
+    log.append(
+        f"Process {os.getpid()}: split_ds took {perf_counter() - start_time} "
+        f"seconds."
+    )
+    return (split, log)
 
 
-@performance_time
+# @performance_time
 def ds_to_nc(ds: xr.Dataset, 
              filepath: str, 
              encodings: dict = None, 
              compress: bool = False,
              shared: dict = None) -> None:
+    
     if compress:
         ds.to_netcdf(
             path=filepath, 
@@ -59,7 +79,7 @@ def ds_to_nc(ds: xr.Dataset,
         )
     
 
-@performance_time
+# @performance_time
 def ds_to_nc_dask(ds: xr.Dataset, 
                   filepath: str, 
                   encodings: dict = None, 
@@ -82,7 +102,7 @@ def ds_to_nc_dask(ds: xr.Dataset,
     # writer.compute()
 
 
-@performance_time
+# @performance_time
 def perform_write(writer: Delayed,
                   shared: dict = None) -> None:
     writer.compute()
@@ -96,7 +116,7 @@ class MoncDs:
                  title:str=None
                  ) -> None:  # , group:DsGroup=None,
         
-        
+        self.log = []
         self.warnings = []
         self.ds = dataset
         # self.time_units = shared['time_units']
@@ -137,11 +157,16 @@ class MoncDs:
 
         if shared['verbose']: 
             start_time = perf_counter()
-            print(
+            self.log.append(
                 f"Process {os.getpid()}: cfize running on MONC dataset "
                 f"{self.ds.attrs['title']} with {self.n_dims} spatial "
                 f"dimensions."
             )
+            # print(
+            #     f"Process {os.getpid()}: cfize running on MONC dataset "
+            #     f"{self.ds.attrs['title']} with {self.n_dims} spatial "
+            #     f"dimensions."
+            # )
 
         # Pull required options_database info into dictionary
         self.get_options(
@@ -167,10 +192,14 @@ class MoncDs:
         self.cfize_variables(variables=var_list, shared=shared)
 
         if shared['verbose']: 
-            print(
+            self.log.append(
                 f"Process {os.getpid()}: MoncDs.cfize took "
                 f"{perf_counter() - start_time} seconds."
             )
+            # print(
+            #     f"Process {os.getpid()}: MoncDs.cfize took "
+            #     f"{perf_counter() - start_time} seconds."
+            # )
 
         # Return processed dataset
         return self.ds
@@ -264,6 +293,7 @@ class MoncDs:
                      shared: dict,
                      updates:dict=None):
         '''Add/update units for specified variable.'''
+        
         time_units = shared['time_units']
         if var in CONFIG['new_coordinate_variables']:
             if not updates:
@@ -398,10 +428,14 @@ class MoncDs:
                                 'attributes']['axis']
                     elif var[0].lower() in {'x', 'y', 'z'}:
                         if not shared['quiet']:
-                            print(
+                            self.log.append(
                                 f"MoncDs.update_units: assumed axis "
                                 f"{var[0].upper()} for variable {var}."
                             )
+                            # print(
+                            #     f"MoncDs.update_units: assumed axis "
+                            #     f"{var[0].upper()} for variable {var}."
+                            # )
                         self.ds[var].attrs['axis'] = var[0].upper()
                     elif 'axis' not in self.ds[var].attrs:
                         # Prompt user if required.
@@ -439,11 +473,16 @@ class MoncDs:
                         shared: dict):
         
         if shared['verbose']: 
-            print(
+            self.log.append(
                 f"Process {os.getpid()}: cfizing variables on MONC dataset "
                 f"{self.ds.attrs['title']} with {self.n_dims} spatial "
                 f"dimensions."
             )
+            # print(
+            #     f"Process {os.getpid()}: cfizing variables on MONC dataset "
+            #     f"{self.ds.attrs['title']} with {self.n_dims} spatial "
+            #     f"dimensions."
+            # )
         
         # Process any coordinate variables first, as changes in these may affect
         # processing of data variables.

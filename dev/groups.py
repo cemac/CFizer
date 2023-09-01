@@ -5,9 +5,9 @@ import xarray as xr
 from glob import iglob
 from setup import *
 import re
-from units import TimeUnits
+# from units import TimeUnits
 from cfize_ds import MoncDs
-from utils import type_from_str, performance_time
+from utils import type_from_str #, performance_time
 from time import perf_counter
 
 
@@ -98,7 +98,7 @@ def variable_glob(ds: xr.Dataset, var_glob: str) -> list:
     return [match_str.fullmatch(v).string for v in set(ds.variables) if match_str.fullmatch(v)]
 
 
-@performance_time
+# @performance_time
 def merge_dimensions(*args) -> xr.Dataset:
     '''
     This is designed to merge datasets whose time coordinates match, but contain
@@ -183,7 +183,7 @@ class DsGroup:
         n_dims: Number of *spatial* dimensions (X, Y, Z), ignoring variations 
                 such as z & zn.
         '''
-
+        self.log = []
         # global vocabulary, reference_vars
 
         # If groups parameter contains existing DsGroup objects:
@@ -205,9 +205,13 @@ class DsGroup:
             
             # Open each group.processed as xr.Dataset
             try:
-                if shared['verbose']: print(
-                    f"Process {os.getpid()}: DsGroup: opening datasets {[op.basename(path) for path in self.filepaths]}."
-                )
+                if shared['verbose']: 
+                    self.log.append(
+                        f"Process {os.getpid()}: DsGroup: opening datasets {[op.basename(path) for path in self.filepaths]}."
+                    )
+                    # print(
+                    #     f"Process {os.getpid()}: DsGroup: opening datasets {[op.basename(path) for path in self.filepaths]}."
+                    # )
                 self.to_process = [
                     xr.open_dataset(path, decode_times=False) 
                     for path in self.filepaths
@@ -241,11 +245,16 @@ class DsGroup:
             # Check all datasets to be merged have matching time coordinates.
             if not all([g.time_var == self.time_var for g in groups]):
                 # If not, give error message and keep datasets separate.
-                print(
+                self.log.append(
                     f'DsGroup: When attempting to combine groups, '
                     f'found mismatch in time variables: '
                     f'{[g.time_var for g in groups]}.'
                 )
+                # print(
+                #     f'DsGroup: When attempting to combine groups, '
+                #     f'found mismatch in time variables: '
+                #     f'{[g.time_var for g in groups]}.'
+                # )
                 self.action = None
                 # raise ValueError('DsGroup: When attempting to combine groups, '
                 #                  'found mismatch in time variables.')
@@ -395,16 +404,25 @@ class DsGroup:
             pass
 
     # @performance_time
-    def merge_times(self, shared: dict) -> None:
+    def merge_times(self, shared: dict) -> dict[xr.Dataset, list[str]]:
         '''
         Should print & return name of saved file(s)
         '''
+        log = []
         if shared['verbose']:
             start_time = perf_counter()
 
         # from cfize_ds import cfize_dataset  # To avoid circular imports
         # global vocabulary
-        if shared['verbose']: print(f"Process {os.getpid()}: Merging time series in group {self.n_dims}:{self.name}, containing datasets {[op.basename(path) for path in self.filepaths]}.")
+        if shared['verbose']: 
+            log.append(
+                f"Process {os.getpid()}: Merging time series in group "
+                f"{self.n_dims}:{self.name}, containing datasets "
+                f"{[op.basename(path) for path in self.filepaths]}."
+            )
+            # print(
+            #     f"Process {os.getpid()}: Merging time series in group {self.n_dims}:{self.name}, containing datasets {[op.basename(path) for path in self.filepaths]}."
+            #     )
 
         hold_attrs = {}  # Global attributes to be set once for merged group.
         # time_var = {}
@@ -435,7 +453,7 @@ class DsGroup:
                             last_time_point=last_time_point
                 )  # time_var[i]
             except ConfigError as e:
-                return {'error': 'DsGroups.merge_times: globals_to_vars :' + str(e)}
+                return {'error': 'DsGroups.merge_times: globals_to_vars :' + str(e), 'log': log}
             for name, array in new_vars.items():
                 ds.attrs.pop(name)
                 processing[i] = ds.assign({name: array})  # Need to assign to original dataset in list rather than placeholder ds.
@@ -473,7 +491,7 @@ class DsGroup:
                                     second=t[2]
                                 )
                     else:
-                        return {'error': 'DsGroup.merge_times: group_attrs: ' + str(e)}
+                        return {'error': 'DsGroup.merge_times: group_attrs: ' + str(e), 'log': log}
                 if attr in hold_attrs:
                     if value > hold_attrs[attr]:
                         hold_attrs[attr] = value
@@ -507,27 +525,41 @@ class DsGroup:
         self.to_process.attrs['title'] = self.stem.strip('_ ') + str(self.n_dims) if f'{self.n_dims}d' not in self.stem else self.stem.strip('_ ')
         
         if shared['verbose']:
-            print(
+            log.append(
                 f"Process {os.getpid()}: DsGroup.merge_times took "
                 f"{perf_counter() - start_time} seconds."
             )
-        return {'merged': self.to_process}
+            # print(
+            #     f"Process {os.getpid()}: DsGroup.merge_times took "
+            #     f"{perf_counter() - start_time} seconds."
+            # )
+        return {'merged': self.to_process, 'log': log}
 
-    def merge_groups(self, shared: dict) -> None:
+    def merge_groups(self, shared: dict) -> tuple[list[str], list[str]]:
         """
         This function assumes the member subgroups have already been 'CFized'.
         That means any date(time) attributes will be expected in ISO format
         (yyyy-mm-dd[[T]hh:mm:ss])
         """
-        
-        if shared['verbose']: print(f"Process {os.getpid()}: merging groups - {self.name} with {self.n_dims} dimensions, containing {[op.basename(path) for path in self.filepaths]}.")
-        
+        log = []
+        if shared['verbose']: 
+            log.append(
+                f"Process {os.getpid()}: merging groups - {self.name} with "
+                f"{self.n_dims} dimensions, containing "
+                f"{[op.basename(path) for path in self.filepaths]}."
+            )
+            # print(
+            #     f"Process {os.getpid()}: merging groups - {self.name} with "
+            #     f"{self.n_dims} dimensions, containing "
+            #     f"{[op.basename(path) for path in self.filepaths]}."
+            # )
 
         if self.action != 'merge_groups':
-            print(
-                'merge_groups is not valid if group.action != "merge_groups".'
-            )
-            return
+            # print(
+            #     'merge_groups is not valid if group.action != "merge_groups".'
+            # )
+            return (self.to_process, 
+                    log + 'merge_groups is not valid if group.action != "merge_groups".')
         
         hold_attrs = {}  # Global attributes to be set once for merged group.
 
@@ -565,7 +597,12 @@ class DsGroup:
                     hold_attrs[attr] = value
 
         # xarray.Dataset.merge -> new dataset.
+        start_time = perf_counter()
         merged = merge_dimensions(*self.to_process)
+        self.log.append(
+            f"Process {os.getpid()}: merge_dimensions took "
+            f"{perf_counter() - start_time} seconds."
+        )
         
         # Close source datasets
         [ds.close() for ds in self.to_process]
@@ -614,39 +651,52 @@ class DsGroup:
         # xarray docs report engine='h5netcdf' may sometimes be 
         # faster. However, it doesn't natively handle the 
         # various string length types used here.
+        if shared['verbose']: w_start = perf_counter()
         merged.to_netcdf(
             path=filepath, 
             encoding=encodings)  # , engine='h5netcdf'
-
+        if shared['verbose']: log.append(
+            f"Process {os.getpid()}: xarray.Dataset.to_netcdf took "
+            f"{perf_counter() - w_start} seconds."
+        )
+            
         # TODO: Run each file through cf-checker?
         
         # Close dataset
         merged.close()
 
         self.processed = [filepath]
-        return self.processed
+        return (self.processed, log)
         
     def cf_only(self, 
-                shared: dict):
+                shared: dict) -> dict:
         '''
         TODO: This function still to be tested.
         '''
-        if shared['verbose']: print(f"Processing {group.n_dims}:{group.name}.")
+        log = []
+        if shared['verbose']:
+            log.append(f"Processing {group.n_dims}:{group.name}.")
+            # print(f"Processing {group.n_dims}:{group.name}.")
+        rtn = self.cfize_and_save(shared=shared)
+        if 'log' in rtn:
+            rtn.log = log + rtn.log
 
         # self.to_process = list(self.datasets())  # Open all datasets in group.
-        return self.cfize_and_save(shared=shared)
+        return rtn
         
     # @performance_time
     def cfize_and_save(self, 
                        shared: dict
-                       ):
+                       ) -> dict:
         
-        if shared['verbose']: print(f"Process {os.getpid()}: cfizing & saving datasets in group {self.name} with {self.n_dims} dimensions.")
+        self.log = []
+        if shared['verbose']: 
+            self.log.append(f"Process {os.getpid()}: cfizing & saving datasets in group {self.name} with {self.n_dims} dimensions.")
+            # print(f"Process {os.getpid()}: cfizing & saving datasets in group {self.name} with {self.n_dims} dimensions.")
 
         update_globals = {}
         errors = []
         warnings = []
-
         target_dir = shared['target_dir']
         # time_units = shared['time_units']
         # vocab = shared['vocabulary']
@@ -672,20 +722,25 @@ class DsGroup:
                 errors.append(e)
                 return {
                     'warnings': warnings,
-                    'errors': errors
+                    'errors': errors,
+                    'log': self.log
                 }
             # Call CF compliance function on dataset.
             try:
                 cf_ds = ds.cfize(shared=shared)  # xarray.Dataset
-                warnings += ds.warnings
             except (ConfigError or VocabError or AttributeError) as e:
+                warnings += ds.warnings
+                self.log += ds.log
                 errors.append('MoncDs.cfize: ' + str(e))
                 return {
                     'warnings': warnings,
-                    'errors': errors
+                    'errors': errors,
+                    'log': self.log
                 }
             # except (VocabWarning or ConfigWarning) as e:
             #     warnings.append('MoncDs.cfize: ' + str(e))
+            warnings += ds.warnings
+            self.log += ds.log
 
             # Check whether time variable name has changed
             self.time_var = ds.time_var # Update group's time_var to match 
@@ -751,6 +806,7 @@ class DsGroup:
             # xarray docs report engine='h5netcdf' may sometimes be 
             # faster. However, it doesn't natively handle the 
             # various string length types used here.
+            if shared['verbose']: w_start = perf_counter()
             if COMPRESSION[0]:
                 cf_ds.to_netcdf(
                     path=filepath, 
@@ -762,6 +818,10 @@ class DsGroup:
                 cf_ds.to_netcdf(
                     path=filepath, 
                     encoding=encodings)  # , engine='h5netcdf'
+            if shared['verbose']: self.log.append(
+                f"Process {os.getpid()}: xarray.Dataset.to_netcdf took "
+                f"{perf_counter() - w_start} seconds."
+            )
 
             # TODO: Run each file through cf-checker?
             
@@ -781,5 +841,6 @@ class DsGroup:
             },
             'update_globals': update_globals,
             'warnings': warnings,
-            'errors': errors
+            'errors': errors,
+            'log': self.log
         }

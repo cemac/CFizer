@@ -10,7 +10,7 @@ from cfunits import Units
 import numpy as np
 from datetime import datetime, timezone
 import typing
-from utils import type_from_str, tf, performance_time
+# from utils import type_from_str, tf, performance_time
 # from dask.diagnostics import ProgressBar
 from time import perf_counter
 import argparse
@@ -34,6 +34,7 @@ def process_large(
 
     warnings = []
     errors = []
+    log = []
     
     update_globals = {}  # This is not currently used, but is here for consistency with cf_merge
 
@@ -49,11 +50,14 @@ def process_large(
     group.processed = []
 
     if shared['verbose']:
-        print(
-            f"Process {os.getpid()}: process_large running on group "
-            f"{group.name} - file {op.basename(filepath)}."
-            f"Title passed in: {title}."
-        )
+        log.append(f"Process {os.getpid()}: process_large running on group "
+                   f"{group.name} - file {op.basename(filepath)}. Title passed "
+                   f"in: {title}.")
+        # print(
+        #     f"Process {os.getpid()}: process_large running on group "
+        #     f"{group.name} - file {op.basename(filepath)}."
+        #     f"Title passed in: {title}."
+        # )
     
     with xr.open_dataset(filepath, 
                          decode_times=False
@@ -80,7 +84,8 @@ def process_large(
             errors.append['process_large: globals_to_vars: ' + str(e)]
             return {
                 'warnings': warnings,
-                'errors': errors
+                'errors': errors,
+                'log': log
             }
         for name, array in new_vars.items():
             dataset.attrs.pop(name)
@@ -98,7 +103,8 @@ def process_large(
             errors.append('process_large: MoncDs: ' + str(e))
             return {
                 'warnings': warnings,
-                'errors': errors
+                'errors': errors,
+                'log': log
             }
         #Call CF compliance function:
             # Adds any missing global attributes required by CF convention
@@ -106,19 +112,25 @@ def process_large(
         try:
             monc_ds.cfize(shared=shared)
         except (ConfigError or VocabError or AttributeError) as e:
+            log += monc_ds.log
             errors.append('process_large: MoncDs.cfize: ' + str(e))
+            warnings += monc_ds.warnings
             return {
                 'warnings': warnings,
-                'errors': errors
+                'errors': errors,
+                'log': log
             }
+        log += monc_ds.log
         warnings += monc_ds.warnings
+        
 
         if group.action == 'split':
             # Split dataset by time-point, yielding multiple 
             # new datasets. Append time to titles.
-            processed = split_ds(dataset=monc_ds.ds, 
+            (processed, split_log) = split_ds(dataset=monc_ds.ds, 
                                 var=monc_ds.time_var,
                                 shared=shared)
+            log += split_log
             # processed only ever needs to hold latest collection of datasets.
         else:
             processed = monc_ds.ds  # Will this persist after context of ds ends?
@@ -137,7 +149,8 @@ def process_large(
                 ))
                 return {
                     'warnings': warnings,
-                    'errors': errors
+                    'errors': errors,
+                    'log': log
                 }
 
         # set filepath
@@ -162,43 +175,69 @@ def process_large(
         # Export to NetCDF (set as single-command function, 
         # so can wrap in performance_time).
         # Testing dask version
-        if shared['verbose']: print(
+        if shared['verbose']: 
+            log.append(
                 f"Process {os.getpid()}: preparing delayed writer for "
                 f"{filepath}."
-        )
+            )
+            # print(
+            #     f"Process {os.getpid()}: preparing delayed writer for "
+            #     f"{filepath}."
+            # )
         try:
+            if shared['verbose']: w_start = perf_counter()
             writers.append(ds_to_nc_dask(ds=ds,
                                     filepath=filepath,
                                     encodings=encodings,
                                     compress=COMPRESSION[0],
                                     shared=shared
                                     ))
+            if shared['verbose']: log.append(
+                f"Process {os.getpid()}: ds_to_nc_dask took "
+                f"{perf_counter() - w_start} seconds."
+            )
             ds.close()
             group.processed.append(filepath)
         except Exception as e:
             errors.append('process_large: ds_to_nc_dask: ' + str(e))
             return {
                 'warnings': warnings,
-                'errors': errors
+                'errors': errors,
+                'log': log
             }
 
-    if shared['verbose']: print(f"Process {os.getpid()}: Computing writes.")
+    if shared['verbose']: 
+        log.append(f"Process {os.getpid()}: Computing writes.")
+        # print(f"Process {os.getpid()}: Computing writes.")
     try:
         [perform_write(writer, shared=shared) for writer in writers]
+        for writer in writers:
+            if shared['verbose']: w_start = perf_counter()
+            perform_write(writer, shared=shared)
+            if shared['verbose']: 
+                log.append(
+                    f"Process {os.getpid()}: perform_write took "
+                    f"{perf_counter() - w_start} seconds."
+                )
     except Exception as e:
         errors.append('process_large: perform_write: ' + str(e))
         return {
             'warnings': warnings,
-            'errors': errors
+            'errors': errors,
+            'log': log
         }
     
     # TODO: Run CF checker on output files
     
     if shared['verbose']:
-        print(
+        log.append(
             f"Process {os.getpid()}: process_large took "
             f"{perf_counter() - start_time} seconds."
         )
+        # print(
+        #     f"Process {os.getpid()}: process_large took "
+        #     f"{perf_counter() - start_time} seconds."
+        # )
 
     return {
         'update_group':{
@@ -207,7 +246,8 @@ def process_large(
         },
         'update_globals': update_globals,
         'warnings': warnings,
-        'errors': errors
+        'errors': errors,
+        'log': log
     }
     # return (group, shared)
 
@@ -217,9 +257,14 @@ def cf_merge(group: DsGroup,
     
     errors = []
     warnings = []
-    if shared['verbose']: print(
+    log = []
+    if shared['verbose']: 
+        log.append(
             f"Process {os.getpid()}: cf_merge running on group {group.name}"
         )
+        # print(
+        #     f"Process {os.getpid()}: cf_merge running on group {group.name}"
+        # )
     
     try:
         rtn = group.merge_times(shared=shared)
@@ -227,15 +272,19 @@ def cf_merge(group: DsGroup,
         errors.append('cf_merge: DsGroup.merge_times: ' + str(e))
         return {
             'warnings': warnings,
-            'errors': errors
+            'errors': errors,
+            'log': log
         }
     else:
         if 'error' in rtn and rtn['error']:
             errors.append('cf_merge: DsGroup.merge_times: ' + str(rtn['error']))
             return {
                 'warnings': warnings,
-                'errors': errors
+                'errors': errors,
+                'log': log
             }
+        if 'log' in rtn and rtn['log']:
+            log += rtn['log']
     try:
         rtn = group.cfize_and_save(shared=shared)
     except Exception as e:
@@ -257,12 +306,15 @@ def cf_merge(group: DsGroup,
                 )
             )
         warnings += rtn['warnings'] if 'warnings' in rtn else []
+        if 'log' in rtn and rtn['log']:
+            log += rtn['log']
     
     return {
         'update_group': update_group,
         'update_globals': update_globals,
         'warnings': warnings,
-        'errors': errors
+        'errors': errors,
+        'log': log
     }
 
 
@@ -332,6 +384,10 @@ def process_parallel(
                 for d in {v['dim'] for v in reference_vars.values()}:
                     for r in results[d]:
                         result_dict = r.get()
+                        if 'log' in result_dict and result_dict['log']:
+                            print(
+                                [entry + '\n' for entry in result_dict['log']]
+                            )
                         if 'errors' in result_dict and result_dict['errors']:
                             err_msg = '; '.join([str(e) for e in result_dict['errors']])
                             sys.exit(err_msg)
@@ -437,6 +493,10 @@ def process_parallel(
                     # [update_group, 
                     #  update_globals] = result.get()
                     r = result.get()
+                    if 'log' in result and result['log']:
+                        print(
+                            [entry + '\n' for entry in result['log']]
+                        )
                     if 'errors' in r and r['errors']:
                         sys.exit('; '.join([str(e) for e in r['errors']]))
                     if 'warnings' in r:
@@ -501,6 +561,10 @@ def process_parallel(
                     # [update_group, 
                     #  update_globals] = result.get()
                     r = result.get()
+                    if 'log' in result and result['log']:
+                        print(
+                            [entry + '\n' for entry in result['log']]
+                        )
                     if 'errors' in r and r['errors']:
                         sys.exit('; '.join([str(e) for e in r['errors']]))
                     if 'warnings' in r:
@@ -651,8 +715,10 @@ def process_serial(
         elif group.action == 'merge':
             try:
                 rtn = group.merge_times(shared=shared)
+                if 'log' in rtn:
+                    log += rtn['log']
                 if 'error' in rtn and rtn['error']:
-                    sys.exit('process_serial: DsGroup.merge_times' + str(rtn['error']))
+                    sys.exit(log + '\nprocess_serial: DsGroup.merge_times' + str(rtn['error']))
 
             # group.processed = cf_merge(
             #         group=group,
@@ -696,10 +762,19 @@ def sort_nc(directory, shared: dict) -> [dict, list]:
 
     # global vocabulary, reference_vars
 
-    by_dim = {n_dim: DsGroup(
-        name=group, n_dims=n_dim, action=DIM_ACTIONS[group], shared=shared
-    ) for n_dim, group in DIM_GROUPS.items()}
-
+    # by_dim = {n_dim: DsGroup(
+    #     name=group, n_dims=n_dim, action=DIM_ACTIONS[group], shared=shared
+    # ) for n_dim, group in DIM_GROUPS.items()}
+    by_dim = {}
+    for n_dim, group in DIM_GROUPS.items():
+        by_dim[n_dim] = DsGroup(
+            name=group, n_dims=n_dim, action=DIM_ACTIONS[group], shared=shared
+        )
+        if by_dim[n_dim].log:
+            print(
+                [entry + '\n' for entry in by_dim[n_dim].log]
+            )
+        
     input_files = []
 
     # For each NC file in source directory (recursive parsing or not?):
@@ -1017,15 +1092,21 @@ def main():
     for name, groups in groups_to_merge.items():
         # Create new group, comprising the groups to be merged.
         merger = DsGroup(groups=groups, shared=shared)
+        if merger.log:
+            print(
+                [entry + '/n' for entry in merger.log]
+            )
         
         if merger.action == 'merge_groups':
             # Merge each group's resultant single dataset
             try:
-                merger.merge_groups(shared=shared)
+                (merged_file, log) = merger.merge_groups(shared=shared)
             except xr.MergeError as e:
                 sys.exit("Merge error in DsGroup.merge_groups: " + str(e))
             except Exception as e:
                 sys.exit("Unexpected error in DsGroup.merge_groups: " + str(e))
+            if log:
+                print(entry + '\n' for entry in log)
             
         group_by_dim[re.split(merger.stem,merger.name)[1]] = merger
 
