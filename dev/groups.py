@@ -8,7 +8,7 @@ import re
 # from units import TimeUnits
 from cfize_ds import MoncDs
 from utils import type_from_str #, performance_time
-from time import perf_counter
+from time import perf_counter, strftime, localtime
 
 
 def stem_str(*args: str):
@@ -207,7 +207,9 @@ class DsGroup:
             try:
                 if shared['verbose']: 
                     self.log.append(
-                        f"Process {os.getpid()}: DsGroup: opening datasets {[op.basename(path) for path in self.filepaths]}."
+                        f"{strftime('%H:%M:%S', localtime())} Process "
+                        f"{os.getpid()}: DsGroup: opening datasets "
+                        f"{[op.basename(path) for path in self.filepaths]}."
                     )
                     # print(
                     #     f"Process {os.getpid()}: DsGroup: opening datasets {[op.basename(path) for path in self.filepaths]}."
@@ -246,7 +248,8 @@ class DsGroup:
             if not all([g.time_var == self.time_var for g in groups]):
                 # If not, give error message and keep datasets separate.
                 self.log.append(
-                    f'DsGroup: When attempting to combine groups, '
+                    f'{strftime("%H:%M:%S", localtime())} DsGroup: When '
+                    f'attempting to combine groups, '
                     f'found mismatch in time variables: '
                     f'{[g.time_var for g in groups]}.'
                 )
@@ -416,6 +419,7 @@ class DsGroup:
         # global vocabulary
         if shared['verbose']: 
             log.append(
+                f"{strftime('%H:%M:%S', localtime())} "
                 f"Process {os.getpid()}: Merging time series in group "
                 f"{self.n_dims}:{self.name}, containing datasets "
                 f"{[op.basename(path) for path in self.filepaths]}."
@@ -526,7 +530,7 @@ class DsGroup:
         
         if shared['verbose']:
             log.append(
-                f"Process {os.getpid()}: DsGroup.merge_times took "
+                f"         Process {os.getpid()}: DsGroup.merge_times took "
                 f"{perf_counter() - start_time} seconds."
             )
             # print(
@@ -544,6 +548,7 @@ class DsGroup:
         log = []
         if shared['verbose']: 
             log.append(
+                f"{strftime('%H:%M:%S', localtime())} "
                 f"Process {os.getpid()}: merging groups - {self.name} with "
                 f"{self.n_dims} dimensions, containing "
                 f"{[op.basename(path) for path in self.filepaths]}."
@@ -559,7 +564,7 @@ class DsGroup:
             #     'merge_groups is not valid if group.action != "merge_groups".'
             # )
             return (self.to_process, 
-                    log + 'merge_groups is not valid if group.action != "merge_groups".')
+                    log + ['merge_groups is not valid if group.action != "merge_groups".'])
         
         hold_attrs = {}  # Global attributes to be set once for merged group.
 
@@ -600,7 +605,7 @@ class DsGroup:
         start_time = perf_counter()
         merged = merge_dimensions(*self.to_process)
         self.log.append(
-            f"Process {os.getpid()}: merge_dimensions took "
+            f"         Process {os.getpid()}: merge_dimensions took "
             f"{perf_counter() - start_time} seconds."
         )
         
@@ -656,7 +661,7 @@ class DsGroup:
             path=filepath, 
             encoding=encodings)  # , engine='h5netcdf'
         if shared['verbose']: log.append(
-            f"Process {os.getpid()}: xarray.Dataset.to_netcdf took "
+            f"         Process {os.getpid()}: xarray.Dataset.to_netcdf took "
             f"{perf_counter() - w_start} seconds."
         )
             
@@ -675,7 +680,10 @@ class DsGroup:
         '''
         log = []
         if shared['verbose']:
-            log.append(f"Processing {group.n_dims}:{group.name}.")
+            log.append(
+                f"{strftime('%H:%M:%S', localtime())} Processing "
+                f"{group.n_dims}:{group.name}."
+            )
             # print(f"Processing {group.n_dims}:{group.name}.")
         rtn = self.cfize_and_save(shared=shared)
         if 'log' in rtn:
@@ -691,7 +699,11 @@ class DsGroup:
         
         self.log = []
         if shared['verbose']: 
-            self.log.append(f"Process {os.getpid()}: cfizing & saving datasets in group {self.name} with {self.n_dims} dimensions.")
+            self.log.append(
+                f"{strftime('%H:%M:%S', localtime())} Process {os.getpid()}: "
+                f"cfizing & saving datasets in group {self.name} with "
+                f"{self.n_dims} dimensions."
+            )
             # print(f"Process {os.getpid()}: cfizing & saving datasets in group {self.name} with {self.n_dims} dimensions.")
 
         update_globals = {}
@@ -819,8 +831,8 @@ class DsGroup:
                     path=filepath, 
                     encoding=encodings)  # , engine='h5netcdf'
             if shared['verbose']: self.log.append(
-                f"Process {os.getpid()}: xarray.Dataset.to_netcdf took "
-                f"{perf_counter() - w_start} seconds."
+                f"         Process {os.getpid()}: xarray.Dataset.to_netcdf "
+                f"took {perf_counter() - w_start} seconds."
             )
 
             # TODO: Run each file through cf-checker?

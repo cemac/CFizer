@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 import typing
 # from utils import type_from_str, tf, performance_time
 # from dask.diagnostics import ProgressBar
-from time import perf_counter
+from time import perf_counter, localtime, strftime
 import argparse
 from multiprocessing import Process, Pool #, set_start_method  # multiprocess not available in Jaspy environment.
 from cfize_ds import *
@@ -50,7 +50,7 @@ def process_large(
     group.processed = []
 
     if shared['verbose']:
-        log.append(f"Process {os.getpid()}: process_large running on group "
+        log.append(f"{strftime('%H:%M:%S', localtime())} Process {os.getpid()}: process_large running on group "
                    f"{group.name} - file {op.basename(filepath)}. Title passed "
                    f"in: {title}.")
         # print(
@@ -177,8 +177,8 @@ def process_large(
         # Testing dask version
         if shared['verbose']: 
             log.append(
-                f"Process {os.getpid()}: preparing delayed writer for "
-                f"{filepath}."
+                f"{strftime('%H:%M:%S', localtime())} Process {os.getpid()}: "
+                f"preparing delayed writer for {filepath}."
             )
             # print(
             #     f"Process {os.getpid()}: preparing delayed writer for "
@@ -193,7 +193,7 @@ def process_large(
                                     shared=shared
                                     ))
             if shared['verbose']: log.append(
-                f"Process {os.getpid()}: ds_to_nc_dask took "
+                f"         Process {os.getpid()}: ds_to_nc_dask took "
                 f"{perf_counter() - w_start} seconds."
             )
             ds.close()
@@ -207,7 +207,10 @@ def process_large(
             }
 
     if shared['verbose']: 
-        log.append(f"Process {os.getpid()}: Computing writes.")
+        log.append(
+            f"{strftime('%H:%M:%S', localtime())} Process {os.getpid()}: "
+            f"Computing writes."
+            )
         # print(f"Process {os.getpid()}: Computing writes.")
     try:
         [perform_write(writer, shared=shared) for writer in writers]
@@ -216,7 +219,7 @@ def process_large(
             perform_write(writer, shared=shared)
             if shared['verbose']: 
                 log.append(
-                    f"Process {os.getpid()}: perform_write took "
+                    f"         Process {os.getpid()}: perform_write took "
                     f"{perf_counter() - w_start} seconds."
                 )
     except Exception as e:
@@ -231,7 +234,7 @@ def process_large(
     
     if shared['verbose']:
         log.append(
-            f"Process {os.getpid()}: process_large took "
+            f"         Process {os.getpid()}: process_large took "
             f"{perf_counter() - start_time} seconds."
         )
         # print(
@@ -260,7 +263,8 @@ def cf_merge(group: DsGroup,
     log = []
     if shared['verbose']: 
         log.append(
-            f"Process {os.getpid()}: cf_merge running on group {group.name}"
+            f"{strftime('%H:%M:%S', localtime())} Process {os.getpid()}: "
+            f"cf_merge running on group {group.name}"
         )
         # print(
         #     f"Process {os.getpid()}: cf_merge running on group {group.name}"
@@ -367,6 +371,7 @@ def process_parallel(
         for dim in sorted(list(groups.keys())):
             group = groups[dim]
             if shared['verbose']: print(
+                    f"{strftime('%H:%M:%S', localtime())} "
                     f"Process {os.getpid()}: Setting up parallel processing of "
                     f"{dim}:{group.name}."
                 )
@@ -714,7 +719,8 @@ def process_serial(
     '''
     for dim in sorted(list(groups.keys())):
         group = groups[dim]
-        if shared['verbose']: print(f"Serial processing {dim}:{group.name}.")
+        if shared['verbose']: print(f"{strftime('%H:%M:%S', localtime())}"
+                                    f"Serial processing {dim}:{group.name}.")
         
         if group.action == 'split':
             
@@ -775,7 +781,7 @@ def sort_nc(directory, shared: dict) -> [dict, list]:
     It would be best if all files of a given run were in one directory, 
     rather than split between 0-2d and 3d.
     '''
-    if verbose: print('Categorising files by dimension')
+    if verbose: print(strftime('%H:%M:%S', localtime()), 'Categorising files by dimension')
 
     # global vocabulary, reference_vars
 
@@ -972,7 +978,8 @@ def main():
 
     warnings = []
 
-    if verbose: print(f"Main app process id: {os.getpid()}")  # , started {start_time}
+    if verbose: print(f"{strftime('%H:%M:%S', localtime())} "
+                      f"Main app process id: {os.getpid()}")  # , started {start_time}
 
 
     # Validate supplied directory to parse.
@@ -1030,7 +1037,10 @@ def main():
         ))
     if not args.target_dir:
         if not quiet:
-            print(f"Processed files will be saved to: {target_dir}")
+            print(
+                f"{strftime('%H:%M:%S', localtime())} "
+                f"Processed files will be saved to: {target_dir}"
+            )
 
     # Set number of processes to place in process pool.
     # Subtract 1 from number of processes specified, to use one as controller.
@@ -1062,7 +1072,7 @@ def main():
     if not time_units:
         time_units = time_units_from_input(input_files) if input_files else None
         if shared['verbose'] and time_units:
-            print('Time units found in input file:', (time_units.formatted()))
+            print(strftime('%H:%M:%S', localtime()), 'Time units found in input file:', (time_units.formatted()))
 
     # NOTE: by this stage, time_units should contain a valid reference date /
     # datetime and calendar. The base units will be set to the default 
@@ -1134,13 +1144,17 @@ def main():
                 [os.remove(f) for f in merger.filepaths]
             except OSError as e:
                 if not shared['quiet']:
-                    print("Failed to delete interim NC files. " + str(e))
+                    print(strftime('%H:%M:%S', localtime()), "Failed to delete interim NC files. " + str(e))
             else:
                 if shared['verbose']:
-                    print("Removed interim files:", 
-                          [op.basename(f) for f in merger.filepaths])
+                    print(
+                        f"{strftime('%H:%M:%S', localtime())} Removed interim "
+                        f"files:\n", 
+                        "\n".join([op.basename(f) for f in merger.filepaths])
+                    )
 
     # Output list of actions taken: each list of merged files & what file they were merged into; each split file and list of files it was split into; each file processed without merge/split & what its new version is called.
+    print("\nSUMMARY\n=======")
     for k, group in group_by_dim.items():
         print(
             f"Group {k}: source files "
@@ -1152,7 +1166,8 @@ def main():
     # Garbage collection if required.
 
     end_time = perf_counter()
-    if verbose: print(f"Main app process {os.getpid()} took {end_time - start_time} seconds")
+    if verbose: print(f"         Main app process {os.getpid()} took "
+                      f"{end_time - start_time} seconds")
 
     if len(warnings) > 0:
         if shared['quiet']:

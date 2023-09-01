@@ -4,7 +4,7 @@ from setup import *
 from utils import type_from_str, generate_coords #, performance_time
 from cfunits import Units
 from dask.delayed import Delayed
-from time import perf_counter
+from time import perf_counter, strftime, localtime
 # from cfizer import OPTIONS_DATABASE, CONFIG
 
 
@@ -29,8 +29,8 @@ def split_ds(dataset: xr.Dataset,
         raise AttributeError(f'split_ds: {var} not in dataset dimensions.')
     if shared['verbose']: 
         log.append(
-            f'Process {os.getpid()}: splitting dataset '
-            f'{dataset.attrs["title"]} by {var}.'
+            f"{strftime('%H:%M:%S', localtime())} Process {os.getpid()}: "
+            f"splitting dataset {dataset.attrs['title']} by {var}."
         )
         # print(
         #     f'Process {os.getpid()}: splitting dataset '
@@ -43,8 +43,8 @@ def split_ds(dataset: xr.Dataset,
         grouped[point].attrs['title'] = base_title + str(int(point))
         if shared['verbose']: 
             log.append(
-                f"Process {os.getpid()}: Created new dataset with title, "
-                f"{grouped[point].attrs['title']}"
+                f"{strftime('%H:%M:%S', localtime())} Process {os.getpid()}: Created new dataset with "
+                f"title, {grouped[point].attrs['title']}"
             )
             # print(
             #     f"Process {os.getpid()}: Created new dataset with title, "
@@ -52,8 +52,8 @@ def split_ds(dataset: xr.Dataset,
             # )
     split = list(grouped.values())
     log.append(
-        f"Process {os.getpid()}: split_ds took {perf_counter() - start_time} "
-        f"seconds."
+        f"         Process {os.getpid()}: split_ds took "
+        {perf_counter() - start_time} seconds."
     )
     return (split, log)
 
@@ -158,9 +158,9 @@ class MoncDs:
         if shared['verbose']: 
             start_time = perf_counter()
             self.log.append(
-                f"Process {os.getpid()}: cfize running on MONC dataset "
-                f"{self.ds.attrs['title']} with {self.n_dims} spatial "
-                f"dimensions."
+                f"{strftime('%H:%M:%S', localtime())} Process {os.getpid()}: "
+                f"cfize running on MONC dataset {self.ds.attrs['title']} with "
+                f"{self.n_dims} spatial dimensions."
             )
             # print(
             #     f"Process {os.getpid()}: cfize running on MONC dataset "
@@ -193,7 +193,7 @@ class MoncDs:
 
         if shared['verbose']: 
             self.log.append(
-                f"Process {os.getpid()}: MoncDs.cfize took "
+                f"         Process {os.getpid()}: MoncDs.cfize took "
                 f"{perf_counter() - start_time} seconds."
             )
             # print(
@@ -429,7 +429,8 @@ class MoncDs:
                     elif var[0].lower() in {'x', 'y', 'z'}:
                         if not shared['quiet']:
                             self.log.append(
-                                f"MoncDs.update_units: assumed axis "
+                                f"{strftime('%H:%M:%S', localtime())} MoncDs."
+                                f"update_units: assumed axis "
                                 f"{var[0].upper()} for variable {var}."
                             )
                             # print(
@@ -474,9 +475,9 @@ class MoncDs:
         
         if shared['verbose']: 
             self.log.append(
-                f"Process {os.getpid()}: cfizing variables on MONC dataset "
-                f"{self.ds.attrs['title']} with {self.n_dims} spatial "
-                f"dimensions."
+                f"{strftime('%H:%M:%S', localtime())} Process {os.getpid()}: "
+                f"cfizing variables on MONC dataset {self.ds.attrs['title']} "
+                f"with {self.n_dims} spatial dimensions."
             )
             # print(
             #     f"Process {os.getpid()}: cfizing variables on MONC dataset "
