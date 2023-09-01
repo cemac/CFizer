@@ -51,7 +51,8 @@ def process_large(
     if shared['verbose']:
         print(
             f"Process {os.getpid()}: process_large running on group "
-            f"{group.name} - file {op.basename(filepath)}"
+            f"{group.name} - file {op.basename(filepath)}."
+            f"Title passed in: {title}."
         )
     
     with xr.open_dataset(filepath, 
@@ -114,7 +115,7 @@ def process_large(
 
         if group.action == 'split':
             # Split dataset by time-point, yielding multiple 
-            # new datasets.
+            # new datasets. Append time to titles.
             processed = split_ds(dataset=monc_ds.ds, 
                                 var=monc_ds.time_var,
                                 shared=shared)
@@ -125,8 +126,6 @@ def process_large(
     writers = []
     # For each new dataset:
     for i, ds in enumerate(processed):
-        # Derive new title
-
         # Update required global attributes (MONC time, previous diagnostic write at).
         for attr, (func, attr_type) in split_attrs.items():
             if attr in ds.attrs:

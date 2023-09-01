@@ -27,13 +27,14 @@ def split_ds(dataset: xr.Dataset, shared: dict, var: str = 'time') -> list[xr.Da
         f'Process {os.getpid()}: splitting dataset {dataset.attrs["title"]} '
         f'by {var}.'
     )
-    grouped = {v: ds for (v, ds) in dataset.groupby(var)}
-    for k, v in grouped.items():
+    base_title = dataset.attrs['title'].strip('_ +,.&') + '_'
+    grouped = {point: ds for (point, ds) in dataset.groupby(var)}
+    for point, ds in grouped.items():
         # Append relevant coordinate value to title
-        v.attrs['title'] = v.attrs['title'].strip('_ +,.&') + '_' + str(int(k))
+        grouped[point].attrs['title'] = base_title + str(int(point))
         if shared['verbose']: print(
-                f'Process {os.getpid()}: Created new dataset with title, '
-                f'{v.attrs["title"]}')
+                f"Process {os.getpid()}: Created new dataset with title, "
+                f"{grouped[point].attrs['title']}")
     split = list(grouped.values())
     return split
 
