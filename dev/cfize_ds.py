@@ -43,7 +43,8 @@ def split_ds(dataset: xr.Dataset,
         grouped[point].attrs['title'] = base_title + str(int(point))
         if shared['verbose']: 
             log.append(
-                f"{strftime('%H:%M:%S', localtime())} Process {os.getpid()}: Created new dataset with "
+                f"{strftime('%H:%M:%S', localtime())} Process {os.getpid()}: "
+                f"Created new dataset with "
                 f"title, {grouped[point].attrs['title']}"
             )
             # print(
@@ -51,10 +52,10 @@ def split_ds(dataset: xr.Dataset,
             #     f"{grouped[point].attrs['title']}"
             # )
     split = list(grouped.values())
-    log.append(
-        "Datasets about to be returned by split_ds have titles: " +
-        "; ".join([ds.attrs['title'] for ds in split])
-    )
+    # log.append(
+    #     "Datasets about to be returned by split_ds have titles: " +
+    #     "; ".join([ds.attrs['title'] for ds in split])
+    # )
     log.append(
         f"         Process {os.getpid()}: split_ds took "
         f"{perf_counter() - start_time} seconds."

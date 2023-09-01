@@ -208,8 +208,11 @@ class DsGroup:
                 if shared['verbose']: 
                     self.log.append(
                         f"{strftime('%H:%M:%S', localtime())} Process "
-                        f"{os.getpid()}: DsGroup: opening datasets "
-                        f"{[op.basename(path) for path in self.filepaths]}."
+                        f"{os.getpid()}: DsGroup: opening datasets:"
+                        f"\n                            " +
+                        "\n                            ".join(
+                            [op.basename(path) for path in self.filepaths]
+                        )
                     )
                     # print(
                     #     f"Process {os.getpid()}: DsGroup: opening datasets {[op.basename(path) for path in self.filepaths]}."
@@ -421,8 +424,10 @@ class DsGroup:
             log.append(
                 f"{strftime('%H:%M:%S', localtime())} "
                 f"Process {os.getpid()}: Merging time series in group "
-                f"{self.n_dims}:{self.name}, containing datasets "
-                f"{[op.basename(path) for path in self.filepaths]}."
+                f"{self.n_dims}:{self.name}, containing datasets\n"
+                f"                 " + "\n                 ".join(
+                    [op.basename(path) for path in self.filepaths]
+                )
             )
             # print(
             #     f"Process {os.getpid()}: Merging time series in group {self.n_dims}:{self.name}, containing datasets {[op.basename(path) for path in self.filepaths]}."
@@ -550,8 +555,11 @@ class DsGroup:
             log.append(
                 f"{strftime('%H:%M:%S', localtime())} "
                 f"Process {os.getpid()}: merging groups - {self.name} with "
-                f"{self.n_dims} dimensions, containing "
-                f"{[op.basename(path) for path in self.filepaths]}."
+                f"{self.n_dims} dimensions, containing"
+                "\n                             " + 
+                "\n                             ".join(
+                    [op.basename(path) for path in self.filepaths]
+                )
             )
             # print(
             #     f"Process {os.getpid()}: merging groups - {self.name} with "

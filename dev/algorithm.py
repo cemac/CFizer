@@ -1165,23 +1165,26 @@ def main():
     print("\nSUMMARY\n=======")
     for k, group in group_by_dim.items():
         print(
-            f"Group {k}: source files "
-            f"{[op.basename(path) for path in group.filepaths]} --> "
-            f"{group.action + ' --> ' if group.action and group.action != 'merge_groups' else ''}cfize --> "
-            f"{[op.basename(path) for path in group.processed]}"
+            f"Group {k}: source files\n           " + "\n           ".join(
+                [op.basename(path) for path in group.filepaths]
+            ) + "\n          --> " +
+            f"{group.action + ' --> ' if group.action and group.action != 'merge_groups' else ''}cfize -->\n           " + 
+            "\n           ".join(
+                [op.basename(path) for path in group.processed]
+            )
         )
     print()
     # Garbage collection if required.
 
     end_time = perf_counter()
     if verbose: print(f"         Main app process {os.getpid()} took "
-                      f"{end_time - start_time} seconds")
+                      f"{end_time - start_time} seconds.")
 
     if len(warnings) > 0:
         if shared['quiet']:
-            sys.exit('Quiet mode: warnings suppressed.')
+            sys.exit('\nQuiet mode: warnings suppressed.')
         else:
-            sys.exit('\n'.join([str(e) for e in warnings]))
+            sys.exit('\n' + '\n'.join([str(e) for e in warnings]))
     else:
         sys.exit(0)
 
