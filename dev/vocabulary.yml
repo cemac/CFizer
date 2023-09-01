@@ -253,7 +253,6 @@
     units: kg m-2
   reske:
     long_name: Vertically Integrated Resolved Kinetic Energy
-    standard_name: integral_of_atmosphere_kinetic_energy_content_wrt_zn
     units: J m-2
   rwp:
     long_name: Rain Water Path
@@ -267,7 +266,7 @@
     units: J m-2
   surface_precip:
     long_name: Surface Precipitation
-    standard_name: precipitation_flux_ at_sea_level
+    standard_name: precipitation_flux_at_sea_level
     units: kg m-2 s-1
   time_series*:
     axis: T
