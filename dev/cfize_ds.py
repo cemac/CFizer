@@ -52,7 +52,7 @@ def split_ds(dataset: xr.Dataset,
             # )
     split = list(grouped.values())
     log.append(
-        "Datasets about to be returned by split_ds have titles:",
+        "Datasets about to be returned by split_ds have titles: " +
         "; ".join([ds.attrs['title'] for ds in split])
     )
     log.append(
