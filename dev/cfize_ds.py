@@ -53,7 +53,7 @@ def split_ds(dataset: xr.Dataset,
     split = list(grouped.values())
     log.append(
         f"         Process {os.getpid()}: split_ds took "
-        {perf_counter() - start_time} seconds."
+        f"{perf_counter() - start_time} seconds."
     )
     return (split, log)
 
