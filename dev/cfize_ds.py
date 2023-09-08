@@ -7,18 +7,18 @@ from dask.delayed import Delayed
 from time import perf_counter, strftime, localtime
 from datetime import datetime
 import numpy as np
-# from cfizer import OPTIONS_DATABASE, CONFIG
+# from cfizer import g['CONFIG']['options_database'], g['CONFIG']
 
 
 def get_n_dims(dataset: xr.Dataset) -> int:
     return max([
         len(dataset[v].dims) for v in dataset.variables 
-        if v != OPTIONS_DATABASE['variable']
+        if v != g['CONFIG']['options_database']['variable']
         ])
 
 
 def is_monc(dataset: xr.Dataset) -> bool:
-    return MONC_ID_ATTR in set(dataset.attrs).union(set(dataset.variables))
+    return g['CONFIG']['monc_id_attribute'] in set(dataset.attrs).union(set(dataset.variables))
 
 
 # @performance_time
@@ -139,7 +139,7 @@ class MoncDs:
                 "time_variable parameter."
             )
         
-        if n_dims:
+        if n_dims is not None:
              self.n_dims = n_dims
         # elif group:
         #     self.n_dims = group.n_dims
@@ -177,7 +177,7 @@ class MoncDs:
 
         # Pull required options_database info into dictionary
         self.get_options(
-            fields=CONFIG['options_to_attrs']
+            shared=shared
         )
         
         # Convert any required options_database pairs to attributes (with 
@@ -186,18 +186,18 @@ class MoncDs:
 
         # Add global attributes recommended by CF (some values set at 
         # initialisation)
-        self.add_cf_attrs()
+        self.add_cf_attrs(shared=shared)
 
         # Add any missing coordinates
-        self.missing_coords()
+        self.missing_coords(shared=shared)
         
         # update all (non-options-database) variables in either shared['vocabulary'][dim] or 
         # dataset:
         var_list = set(self.ds.variables)
-        var_list.discard(OPTIONS_DATABASE['variable'])
+        var_list.discard(shared['CONFIG']['options_database']['variable'])
         [var_list.discard(v) for v in [
             k.replace(' ', '_').replace('-', '_') 
-            for k in CONFIG['global_to_variable'].keys()
+            for k in shared['CONFIG']['global_to_variable'].keys()
         ]]  # Replacement needed to account for updated name.
         self.cfize_variables(variables=var_list, shared=shared)
 
@@ -214,7 +214,7 @@ class MoncDs:
         # Return processed dataset
         return self.ds
 
-    def missing_coords(self, dim:str=None):
+    def missing_coords(self, shared: dict, dim:str=None):
         '''
         Looks for any dimensions that currently don't also exist as coordinate 
         variables.
@@ -240,21 +240,21 @@ class MoncDs:
                 if d in self.ds.coords:
                     if d != self.time_var:
                         dim_type = self.ds.coords[d].dtype
-                elif d not in OPTIONS_DATABASE['dimensions']:
+                elif d not in shared['CONFIG']['options_database']['dimensions']:
                     missing.append(d)
             
         
         # For each coord in list:
         for d in missing:
             # Look for any required parameters & attributes in
-                # 1. CONFIG
+                # 1. g['CONFIG']
                 # 2. VOCAB
             attributes = {}
 
-            # Look in CONFIG for parameters required to set up variable:
+            # Look in g['CONFIG'] for parameters required to set up variable:
             # grid spacing & position (edge/centre).
-            if d in CONFIG['new_coordinate_variables'].keys():
-                config = CONFIG['new_coordinate_variables'][d]
+            if d in shared['CONFIG']['new_coordinate_variables'].keys():
+                config = shared['CONFIG']['new_coordinate_variables'][d]
                 try:
                     spacing = config['spacing'] if isinstance(config['spacing'], (int, float)) else self.options_db[config['spacing']]
                     midpoint = 'cent' in config['position'] or 'mid' in config['position']
@@ -305,15 +305,15 @@ class MoncDs:
         '''Add/update units for specified variable.'''
         
         time_units = shared['time_units']
-        if var in CONFIG['new_coordinate_variables']:
+        if var in shared['CONFIG']['new_coordinate_variables']:
             if not updates:
-                updates = CONFIG['new_coordinate_variables'][var]['attributes']
+                updates = shared['CONFIG']['new_coordinate_variables'][var]['attributes']
             else:
                 # Get any info missing from updates out of 
-                # CONFIG['new_coordinate_variables'][var]
+                # shared['CONFIG']['new_coordinate_variables'][var]
                 [
                     updates.update({k: v}) 
-                    for k, v in CONFIG[
+                    for k, v in shared['CONFIG'][
                         'new_coordinate_variables'][var]['attributes'].items() 
                     if k not in updates
                 ]
@@ -432,8 +432,8 @@ class MoncDs:
                 if var in self.ds.dims:
                     if 'axis' in updates:
                         self.ds[var].attrs['axis'] = updates['axis']
-                    elif var in CONFIG['new_coordinate_variables'] and 'axis' in CONFIG['new_coordinate_variables'][var]['attributes']:
-                        self.ds[var].attrs['axis'] = CONFIG[
+                    elif var in shared['CONFIG']['new_coordinate_variables'] and 'axis' in shared['CONFIG']['new_coordinate_variables'][var]['attributes']:
+                        self.ds[var].attrs['axis'] = shared['CONFIG'][
                             'new_coordinate_variables'][var][
                                 'attributes']['axis']
                     elif var[0].lower() in {'x', 'y', 'z'}:
@@ -534,8 +534,9 @@ class MoncDs:
                     for k in updates['dimension_changes'].keys()
                 ]):
                     raise VocabError(
-                        f"cfize_variables: {k}, specified in vocabulary - "
-                        f"dimension_changes, is not a dimension of {var}."
+                        f"cfize_variables: At least one dimension specified in "
+                        f"vocabulary - dimension_changes, is not a dimension "
+                        f"of {var}."
                     )
                 # swap_dims
                 self.ds[var] = self.ds[var].swap_dims(updates['dimension_changes'])
@@ -543,7 +544,7 @@ class MoncDs:
                 # If new dim not in coords, call missing_coords function, 
                 # perhaps with new coord name as argument
                 for d in set(self.ds[var].dims) - set(self.ds[var].dims).intersection(set(self.ds.coords)):
-                    self.missing_coords(dim=d)
+                    self.missing_coords(shared=shared, dim=d)
                 
             # Add/update names:
             # standard_name &/or long_name
@@ -588,7 +589,7 @@ class MoncDs:
             if 'perturbation_to_absolute' in updates and updates['perturbation_to_absolute']:
                 if 'reference_variable' not in updates:
                     raise VocabError(
-                        f"cfize_variables: {variable}: If "
+                        f"cfize_variables: {var}: If "
                         f"perturbation_to_absolute is True, "
                         f"reference_variable must contain the name of the "
                         f"variable containing reference value(s).")
@@ -615,7 +616,7 @@ class MoncDs:
                     attrs=self.ds[var].attrs
                 )
 
-    def add_cf_attrs(self, **kwargs):
+    def add_cf_attrs(self, shared: dict, **kwargs):
             # TODO: <version> and <url> and any other required data will be assigned during packaging.
 
             defaults = {}  # {attr: None for attr in CF_ATTRIBUTES}
@@ -629,10 +630,10 @@ class MoncDs:
                 # Only overwrite existing value if a new value was specified in
                 # config file.
                 if attr in self.ds.attrs :
-                    if attr in CONFIG and CONFIG[attr] is not None:
-                        self.ds.attrs[attr] = CONFIG[attr]
-                elif (attr in CONFIG and CONFIG[attr]) or (attr in defaults and defaults[attr]):
-                    self.ds.attrs[attr] = CONFIG[attr] if attr in CONFIG else defaults[attr]
+                    if attr in shared['CONFIG'] and shared['CONFIG'][attr] is not None:
+                        self.ds.attrs[attr] = shared['CONFIG'][attr]
+                elif (attr in shared['CONFIG'] and shared['CONFIG'][attr]) or (attr in defaults and defaults[attr]):
+                    self.ds.attrs[attr] = shared['CONFIG'][attr] if attr in shared['CONFIG'] else defaults[attr]
                 else:
                     # print(
                     #     f"{attr} must be included as a global attribute, "
@@ -644,46 +645,48 @@ class MoncDs:
                         f"be specified in config.yml."
                     ))
 
-    def get_options(self, fields: list|set|tuple = None) -> dict:
+    def get_options(self, shared: dict) -> dict:
         '''
         Note: the xarray.Dataset.assign_attrs() method isn't suitable here, as it
         creates a new dataset, rather than updating the existing one.
         '''
+
+        fields=shared['CONFIG']['options_to_attrs']
         # Get required fields from argument; import all if none supplied.
         if fields is None:
-            if self.ds[OPTIONS_DATABASE['variable']].dtype == 'S1':
+            if self.ds[shared['CONFIG']['options_database']['variable']].dtype == 'S1':
                 # This is used if concat_characters=False options is used in
                 # xarray.open_dataset. It seems to create some problems down
                 # the line, so is not advised.
                 options = {
                     ''.join([c.decode('utf-8') for c in k]): 
                     type_from_str(''.join([c.decode('utf-8') for c in v]))
-                    for k, v in self.ds[OPTIONS_DATABASE['variable']].data
+                    for k, v in self.ds[shared['CONFIG']['options_database']['variable']].data
                 }  # If dataset opened with concat_characters=False
             else:
                 options = {
                     k.decode('utf-8'): type_from_str(v.decode('utf-8'))
-                    for [k, v] in self.ds[OPTIONS_DATABASE['variable']].data}
+                    for [k, v] in self.ds[shared['CONFIG']['options_database']['variable']].data}
         else:
-            if self.ds[OPTIONS_DATABASE['variable']].dtype == 'S1':
+            if self.ds[shared['CONFIG']['options_database']['variable']].dtype == 'S1':
                 options = {
                     ''.join([c.decode('utf-8') for c in k]): 
                     type_from_str(''.join([c.decode('utf-8') for c in v]))
-                    for k, v in self.ds[OPTIONS_DATABASE['variable']].data
+                    for k, v in self.ds[shared['CONFIG']['options_database']['variable']].data
                     if ''.join([c.decode('utf-8') for c in k]) in fields
                 }  # If dataset opened with concat_characters=False
             else:
                 options = {
                     k.decode('utf-8'): type_from_str(v.decode('utf-8'))
-                    for [k, v] in self.ds[OPTIONS_DATABASE['variable']].data
+                    for [k, v] in self.ds[shared['CONFIG']['options_database']['variable']].data
                     if k.decode('utf-8') in fields}
         
         # Drop any options that are reset by DEPHY, if used.
         if all([
             opt in options and options[opt] == val 
-            for opt, val in DEPHY_OPTIONS.items()
+            for opt, val in shared['CONFIG']['dephy_true_if'].items()
         ]):
-            for a in DROP_FOR_DEPHY:
+            for a in shared['CONFIG']['drop_for_dephy']:
                 if a in options:
                     options.pop(a)
 

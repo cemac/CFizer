@@ -39,13 +39,15 @@ def get_time_var(*args: int|xr.Dataset) -> str:
     '''
     
     '''
+    global g
+
     # If argument is an integer, assume it's the number of spatial dimensions
     if isinstance(args[0], int):
-        if args[0] not in vocabulary:
+        if args[0] not in g['vocabulary']:
             raise VocabError(
                 'Vocabulary file has no specifications for '
                 f'{args[0]} spatial dimensions.')
-        time_vars = [v for v in vocabulary[args[0]].keys() 
+        time_vars = [v for v in g['vocabulary'][args[0]].keys() 
                      if 'time' in v.lower()]
         if not time_vars:
             raise VocabError('No time variable found in '
@@ -131,10 +133,11 @@ def merge_dimensions(*args) -> xr.Dataset:
 
 def globals_to_vars(ds: xr.Dataset, 
                     time_var: str, 
-                    last_time_point: int|float) -> xr.Dataset:
+                    last_time_point: int|float,
+                    shared: dict) -> xr.Dataset:
     
     vars = {}
-    for global_attr, var_attrs in CONFIG['global_to_variable'].items():
+    for global_attr, var_attrs in shared['CONFIG']['global_to_variable'].items():
 
         # Any advantage of name = global_attr.replace(' ', '_')?
 
@@ -144,14 +147,14 @@ def globals_to_vars(ds: xr.Dataset,
                 f"but not found in attributes of dataset."
             )
         
-        if global_attr in do_not_propagate:
+        if global_attr in shared['do_not_propagate']:
             # assign `np.nan` to each data point except last, and then 
             # set coords as per other case below.
             data = type_from_str(ds.attrs[global_attr])
             coords = [last_time_point]
         else:
-            data = [type_from_str(ds.attrs[global_attr])]*len(ds[group.time_var].data)
-            coords = ds[group.time_var]
+            data = [type_from_str(ds.attrs[global_attr])]*len(ds[time_var].data)
+            coords = ds[time_var]
 
         # try:
         vars[global_attr] = xr.DataArray(
@@ -339,7 +342,7 @@ class DsGroup:
         return ds_list(self.filepaths)
     
     def add(self, filepath: str) -> None:
-
+        global g
         # global vocabulary  # Allow time variable names to be updated
         
         if not op.exists(filepath):
@@ -402,8 +405,8 @@ class DsGroup:
                     f'Multiple variables found in dataset that match time '
                     f'variable pattern, {self.time_var}.')
             exact_time_var = exact_time_var[0]
-            vocabulary[self.n_dims][exact_time_var] = vocabulary[self.n_dims][self.time_var]
-            vocabulary[self.n_dims].pop(self.time_var)
+            g['vocabulary'][self.n_dims][exact_time_var] = g['vocabulary'][self.n_dims][self.time_var]
+            g['vocabulary'][self.n_dims].pop(self.time_var)
             self.time_var = exact_time_var
         else:
             # TODO: confirm time variable in new dataset matches self.time_var
@@ -459,7 +462,8 @@ class DsGroup:
                 new_vars = globals_to_vars(
                             ds=ds, 
                             time_var=self.time_var, 
-                            last_time_point=last_time_point
+                            last_time_point=last_time_point,
+                            shared=shared
                 )  # time_var[i]
             except ConfigError as e:
                 return {'error': 'DsGroups.merge_times: globals_to_vars :' + str(e), 'log': log}
@@ -469,7 +473,7 @@ class DsGroup:
                 
             # Store largest value per group of any 'one per group' global 
             # attributes, as value to assign to merged dataset.
-            for attr, attr_type in group_attrs.items():
+            for attr, attr_type in shared['group_attrs'].items():
                 value = ds.attrs[attr]
                 try:
                     value = attr_type(value)
@@ -582,7 +586,7 @@ class DsGroup:
         for i, ds in enumerate(self.to_process):
         # Store largest value per group of any 'one per group' global 
         # attributes, as value to assign to merged dataset.
-            for attr, attr_type in group_attrs.items():
+            for attr, attr_type in shared['group_attrs'].items():
                 value = ds.attrs[attr]
                 try:
                     value = attr_type(value)
@@ -651,10 +655,10 @@ class DsGroup:
             k:{
                 'dtype': v.dtype,
                 '_FillValue': None,
-                CONFIG['compression']['type']: CONFIG['compression']['on'],
-                'complevel': CONFIG['compression']['level']
+                shared['CONFIG']['compression']['type']: shared['CONFIG']['compression']['on'],
+                'complevel': shared['CONFIG']['compression']['level']
             } for k, v in merged.variables.items()
-        } if CONFIG['compression']['on'] else {
+        } if shared['CONFIG']['compression']['on'] else {
             k:{
                 'dtype': v.dtype,
                 '_FillValue': None
@@ -698,7 +702,7 @@ class DsGroup:
         if shared['verbose']:
             log.append(
                 f"{strftime('%H:%M:%S', localtime())} Processing "
-                f"{group.n_dims}:{group.name}."
+                f"{self.n_dims}:{self.name}."
             )
             # print(f"Processing {group.n_dims}:{group.name}.")
         rtn = self.cfize_and_save(shared=shared)
@@ -795,13 +799,13 @@ class DsGroup:
             # ]
             # [
             #     shared['vocabulary'][reference_vars[v]['for'][0]][reference_vars[v]['for'][1]].update({'ref_array': cf_ds[v]})
-            #     for v in reference_vars.keys()
+            #     for v in shared['reference_vars'].keys()
             #     if v in cf_ds.variables
             # ]
-            for v in reference_vars.keys():
+            for v in shared['reference_vars'].keys():
                 if v in cf_ds.variables:
                     [perturbation_dim, 
-                     perturbation_var] = reference_vars[v]['for']
+                     perturbation_var] = shared['reference_vars'][v]['for']
                     add_to_var = {'ref_array': cf_ds[v]}
                     if 'vocabulary' in update_globals:
                         if perturbation_dim in update_globals['vocabulary']:
@@ -825,10 +829,10 @@ class DsGroup:
                 k:{
                     'dtype': v.dtype,
                     '_FillValue': None,
-                    CONFIG['compression']['type']: CONFIG['compression']['on'],
-                'complevel': CONFIG['compression']['level']
+                    shared['CONFIG']['compression']['type']: shared['CONFIG']['compression']['on'],
+                'complevel': shared['CONFIG']['compression']['level']
                 } for k, v in cf_ds.variables.items()
-            } if CONFIG['compression']['on'] else {
+            } if shared['CONFIG']['compression']['on'] else {
                 k:{
                     'dtype': v.dtype,
                     '_FillValue': None
@@ -840,7 +844,7 @@ class DsGroup:
             # faster. However, it doesn't natively handle the 
             # various string length types used here.
             if shared['verbose']: w_start = perf_counter()
-            if CONFIG['compression']['on']:
+            if shared['CONFIG']['compression']['on']:
                 cf_ds.to_netcdf(
                     path=filepath, 
                     encoding=encodings,
