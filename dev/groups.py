@@ -820,6 +820,8 @@ class DsGroup:
                         }
             
             # TODO: This is where history attribute should be appended
+            history = datetime.now().isoformat() + f": output file {op.basename(filepath)} processed for CF compliance using CFizer version {VERSION} (https://github.com/cemac/CFizer); configuration and source files listed in log file {shared['logfile']}"
+            cf_ds.attrs['history'] = history
             
             # Set encoding
             # Encoding needs to be set, with each variable's encoding 

@@ -170,8 +170,9 @@ def process_large(
                 attr.replace(' ', '_').replace('-', '_')
             ] = ds.attrs.pop(attr)
         
-        # TODO: Update history attribute(s)
-
+        # Update history attribute(s)
+        history = datetime.now().isoformat() + f": output file {op.basename(filepath)} processed for CF compliance using CFizer version {VERSION} (https://github.com/cemac/CFizer); configuration and source files listed in log file {shared['logfile']}"
+        ds.attrs['history'] = history
 
         # set filepath
         filepath = op.join(
@@ -1188,7 +1189,8 @@ def main():
     # coordinate variable(s).
             
     g.update({
-        'time_units': time_units
+        'time_units': time_units,
+        'logfile': f'cfizer_{datetime.now().isoformat(sep="_", timespec="minutes")}.log'
     })   # , 'reference_vars': g['reference_vars']
         # These are global variables (not constants), but must be passed 
         # explicitly to any functions that may run on a separate process.
@@ -1261,6 +1263,18 @@ def main():
                             op.basename(f) for f in merger.filepaths
                         ])
                     )
+
+    # TODO: generate logfile, containing all configuration details & file conversion history.
+    audit_trail = g
+    audit_trail['processing'] = {}
+    for k, group in group_by_dim.items():
+        audit_trail['processing'].update({
+            'source_file(s)': [op.basename(path) for path in group.filepaths],
+            'action': 'CF compliance ' + group.action if group.action and group.action != 'merge_groups' else 'CF compliance',
+            'output_file(s)': [op.basename(path) for path in group.processed] 
+        })
+    with open(op.join(target_dir, g['logfile']), 'w') as logfile:
+        
 
     # Output list of actions taken: each list of merged files & what file they were merged into; each split file and list of files it was split into; each file processed without merge/split & what its new version is called.
     print("\nSUMMARY\n=======")
