@@ -1073,6 +1073,7 @@ def main():
     start_time = perf_counter()
     global g
     g = initialise()
+    audit_trail = {}
     
     # get command line arguments
     args = parse_arguments()
@@ -1255,6 +1256,9 @@ def main():
                 if not g['quiet']:
                     print(strftime('%H:%M:%S', localtime()), "Failed to delete interim NC files. " + str(e))
             else:
+                audit_trail['interim_files_removed'] = [
+                    op.basename(f) for f in merger.filepaths
+                ]
                 if g['verbose']:
                     print(
                         f"{strftime('%H:%M:%S', localtime())} Removed interim "
@@ -1265,16 +1269,57 @@ def main():
                     )
 
     # TODO: generate logfile, containing all configuration details & file conversion history.
-    audit_trail = g
+    for k, v in g.items():
+        if isinstance(v, dict):
+            audit_trail[str(k)] = {}
+            for k1, v1 in v.items():
+                if isinstance(v1, dict):
+                    audit_trail[str(k)][str(k1)] = {}
+                    for k2, v2 in v1.items():
+                        if isinstance(v2, dict):
+                            audit_trail[str(k)][str(k1)][str(k2)] = {}
+                            for k3, v3 in v2.items():
+                                if k3 == 'ref_array': continue
+                                if isinstance(v3, dict):
+                                    audit_trail[str(k)][str(k1)][str(k2)][str(k3)] = {}
+                                    for k4, v4 in v3.items():
+                                        audit_trail[str(k)][str(k1)][str(k2)][str(k3)][str(k4)] = str(v4)
+                                elif isinstance(v3, (list, tuple, set)):
+                                    audit_trail[str(k)][str(k1)][str(k2)][str(k3)] = [
+                                        str(x) for x in v3
+                                    ]
+                                else:
+                                    audit_trail[str(k)][str(k1)][str(k2)][str(k3)] = str(v3)
+                        elif isinstance(v2, (list, tuple, set)):
+                            audit_trail[str(k)][str(k1)][str(k2)] = [
+                                str(x) for x in v2
+                            ]
+                        else:
+                            audit_trail[str(k)][str(k1)][str(k2)] = str(v2)
+                elif isinstance(v1, (list, tuple, set)):
+                    audit_trail[str(k)][str(k1)] = [str(x) for x in v1]
+                else:
+                    audit_trail[str(k)][str(k1)] = str(v1)
+        elif isinstance(v, (list, tuple, set)):
+            audit_trail[str(k)] = [str(x) for x in v]
+        else:
+            audit_trail[str(k)] = str(v)
+    audit_trail['warnings'] = list(set([str(e) for e in warnings]))
     audit_trail['processing'] = {}
     for k, group in group_by_dim.items():
         audit_trail['processing'].update({
-            'source_file(s)': [op.basename(path) for path in group.filepaths],
-            'action': 'CF compliance ' + group.action if group.action and group.action != 'merge_groups' else 'CF compliance',
-            'output_file(s)': [op.basename(path) for path in group.processed] 
+            'group ' + str(k): {
+                'source_file(s)': [
+                    op.basename(path) for path in group.filepaths
+                ],
+                'action': 'CF compliance + ' + group.action if group.action else 'CF compliance',
+                'output_file(s)': [
+                    op.basename(path) for path in group.processed
+                ] 
+            }
         })
     with open(op.join(target_dir, g['logfile']), 'w') as logfile:
-        
+        yaml.safe_dump(audit_trail, logfile)
 
     # Output list of actions taken: each list of merged files & what file they were merged into; each split file and list of files it was split into; each file processed without merge/split & what its new version is called.
     print("\nSUMMARY\n=======")

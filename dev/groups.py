@@ -641,6 +641,10 @@ class DsGroup:
         # Set filepath and save as processed
         filepath = op.join(shared['target_dir'], f"{merged.attrs['title']}.nc")
 
+        # TODO: This is where history attribute should be appended
+        history = datetime.now().isoformat() + f": interim files {[op.basename(f) for f in self.filepaths]} processed for CF compliance using CFizer version {VERSION} (https://github.com/cemac/CFizer); configuration and source files listed in log file {shared['logfile']}"
+        merged.attrs['history'] = history
+
         # Set encoding
         # TODO: encoding needs to be set, with each variable's encoding 
         # specified. Otherwise, _FillValue is applied to all, including 
@@ -820,7 +824,7 @@ class DsGroup:
                         }
             
             # TODO: This is where history attribute should be appended
-            history = datetime.now().isoformat() + f": output file {op.basename(filepath)} processed for CF compliance using CFizer version {VERSION} (https://github.com/cemac/CFizer); configuration and source files listed in log file {shared['logfile']}"
+            history = datetime.now().isoformat() + f": file(s) processed for CF compliance using CFizer version {VERSION} (https://github.com/cemac/CFizer); configuration and source files listed in log file {shared['logfile']}"
             cf_ds.attrs['history'] = history
             
             # Set encoding
