@@ -1,9 +1,6 @@
-# from time import perf_counter
-# import os
 import numpy as np
 import sys
 import xarray
-import datetime, time
 
 
 def str_to_class(module: str, class_name: str):
@@ -24,18 +21,6 @@ def first_rest(first_var: str, rest_var: str, module_type: str, i: int, ds_list:
         raise KeyError(
             "Variable(s) not found in dataset's variables or attributes."
         )
-# def performance_time(func):
-#     def wrapper(*args, **kwargs):
-#         start_time = perf_counter()
-#         response = func(*args, **kwargs)  # run the wrapped function
-#         end_time = perf_counter()
-#         duration = end_time - start_time
-#         if ('shared' in kwargs and 
-#             'verbose' in kwargs['shared'] and 
-#             kwargs['shared']['verbose']):
-#             print(f"Process {os.getpid()}: {func} took {duration} seconds.")
-#         return response
-#     return wrapper
 
 
 def type_from_str(string: str):
@@ -85,12 +70,31 @@ def generate_coords(number: int,
     return np.arange(first, number, 1, dtype=data_type) * spacing
 
 
-# def tf(string) -> bool:
-#     '''
-#     Adapted from https://stackoverflow.com/a/43357954
-#     '''
-#     if isinstance(string, bool):
-#         return string
-#     return True if string.lower() in {
-#         'true', 'yes', 't', 'y', '1'
-#     } else False
+def dict_strings(d: dict) -> dict:
+    all_strings = {}
+    if not isinstance(d, dict):
+        if isinstance(d, (list, tuple, set)):
+            return [str(element) for element in d]
+        elif isinstance(d, (xarray.Dataset, xarray.DataArray)):
+            return None
+        else:
+            return str(d)
+    for k, v in d.items():
+        if v is None:
+            continue
+        elif isinstance(v, dict):
+            all_strings[str(k)] = dict_strings(v)
+        elif isinstance(v, (list, tuple, set)):
+            all_strings[str(k)] = []
+            for element in v:
+                if isinstance(element,  (list, tuple, set)):
+                    all_strings[str(k)].append([str(x) for x in element])
+                elif isinstance(element, dict):
+                    all_strings[str(k)].append(dict_strings(element))
+                else:
+                    all_strings[str(k)].append(str(element))
+        elif isinstance(v, (xarray.Dataset, xarray.DataArray)):
+            continue
+        else:
+            all_strings[str(k)] = str(v)
+    return all_strings

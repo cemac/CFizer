@@ -40,6 +40,11 @@ def get_time_var(*args: int|xr.Dataset) -> str:
     
     '''
     global g
+    if not g:
+        raise NameError(
+            f"Process {os.getpid()}: get_time_var: Global dictionary g not "
+            f"available."
+        )
 
     # If argument is an integer, assume it's the number of spatial dimensions
     if isinstance(args[0], int):
@@ -343,6 +348,12 @@ class DsGroup:
     
     def add(self, filepath: str) -> None:
         global g
+        if not g:
+            raise NameError(
+                f"Process {os.getpid()}: get_time_var: Global dictionary g not "
+                f"available."
+            )
+
         # global vocabulary  # Allow time variable names to be updated
         
         if not op.exists(filepath):

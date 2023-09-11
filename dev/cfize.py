@@ -21,6 +21,7 @@ from units import TimeUnits
 from groups import DsGroup, globals_to_vars
 import re
 import sys
+from utils import dict_strings
 
 
 def process_large(
@@ -759,7 +760,7 @@ def process_serial(
     '''
     for dim in sorted(list(groups.keys())):
         group = groups[dim]
-        if shared['verbose']: print(f"{strftime('%H:%M:%S', localtime())}"
+        if shared['verbose']: print(f"{strftime('%H:%M:%S', localtime())} "
                                     f"Serial processing {dim}:{group.name}.")
         
         if group.action == 'split':
@@ -937,6 +938,12 @@ def time_units_from_input(filepaths: list) -> TimeUnits:
     under which time units are expected.
     '''
 
+    if not g:
+        raise NameError(
+            f"Process {os.getpid()}: get_time_var: Global dictionary g not "
+            f"available."
+        )
+
     input_data = {}
     for f in filepaths:
         with xr.open_dataset(f, decode_times=False) as ds:  
@@ -1038,8 +1045,6 @@ def parse_arguments():
         '--keep-interim', '-i',
         dest='keep_interim',
         action='store_true',
-        # type=tf,
-        # choices={True, False},
         default=False,
         help='Set if multiple dimension sets are being merged, but you want to keep the single-dimension-set files as well.',
         required=False
@@ -1049,8 +1054,6 @@ def parse_arguments():
         '--verbose', '-v',
         dest='verbose',
         action='store_true',
-        # type=tf,
-        # choices=(True, False),
         default=False,
         help='Set to report all progress to stdout.',
         required=False
@@ -1060,8 +1063,6 @@ def parse_arguments():
         '--quiet', '-q',
         dest='quiet',
         action='store_true',
-        # type=tf,
-        # choices=(True, False),
         default=False,
         help='Set to suppress warnings being printed to stdout.',
         required=False
@@ -1069,8 +1070,11 @@ def parse_arguments():
 
     return parser.parse_args()
 
+
 def main():
     start_time = perf_counter()
+    # Initialise "global" variables dictionary, to allow passing between 
+    # processes.
     global g
     g = initialise()
     audit_trail = {}
@@ -1084,7 +1088,7 @@ def main():
     if g['verbose']: print(f"Process {os.getpid()}: Initialisation took "
                       f"{perf_counter() - start_time} seconds.")
 
-    start_time = perf_counter()  # wrapping in performance counter doesn't work, presumably because of multiprocessing.
+    start_time = perf_counter()  # wrapping in performance counter doesn't work with multiprocessing.
 
     warnings = []
 
@@ -1099,12 +1103,21 @@ def main():
     time_units = None
     # Validate & set reference time if supplied.
     if args.ref_time:
+        ref_time_str = args.ref_time
+    elif g['CONFIG']['reference_time'] and g['CONFIG']['reference_time'] != 'input_file':
+        ref_time_str = g['CONFIG']['reference_time']
+    else:
+        ref_time_str = None
+    # Command line argument takes precedence over values supplied in config
+    # file or input file.
+    if ref_time_str:
         try:
-            ref_time = datetime.fromisoformat(args.ref_time)
+            ref_time = datetime.fromisoformat(ref_time_str)
             if not ref_time.tzinfo:
+                # If no time zone specified, default to UTC, as per CF.
                 ref_time = ref_time.replace(tzinfo=timezone.utc)
         except Exception as e:
-            sys.exit(f"{args.ref_time} is an invalid reference time. {str(e)}")
+            sys.exit(f"{ref_time_str} is an invalid reference time. {str(e)}")
     else:
         ref_time = None
 
@@ -1150,7 +1163,12 @@ def main():
                 f"{strftime('%H:%M:%S', localtime())} "
                 f"Processed files will be saved to: {target_dir}"
             )
+    g.update({
+        'target_dir': target_dir
+    })   # These are global variables (not constants), but must be passed 
+        # explicitly to any functions that may run on a separate process.
 
+    
     # Set number of processes to place in process pool.
     # Subtract 1 from number of processes specified, to use one as controller.
     n_proc = args.n_proc - 1 if args.n_proc else 0
@@ -1161,11 +1179,6 @@ def main():
         # TODO: check os.cpu_count() works correctly on JASMIN, when mutliple
         # cores are allocated.
     
-    g.update({
-        'target_dir': target_dir
-    })   # These are global variables (not constants), but must be passed 
-        # explicitly to any functions that may run on a separate process.
-
     # Parse directory & categorise NC files by type and dimensions
     try:
         [group_by_dim, input_files] = sort_nc(source_dir, shared=g)
@@ -1177,7 +1190,9 @@ def main():
     # Attempt to derive time unit info, if not already supplied at command line.
     # Assume time units will be common to all datasets in directory.
     if not time_units:
-        if g['FROM_INPUT_FILE'] and 'reftime' in g['FROM_INPUT_FILE']:
+        if g['CONFIG']['reference_time'] == 'input_file' or (
+            g['FROM_INPUT_FILE'] and 'reftime' in g['FROM_INPUT_FILE']
+        ):
             time_units = time_units_from_input(input_files) if input_files else None
             if g['verbose'] and time_units:
                 print(strftime('%H:%M:%S', localtime()), 'Time units found in input file:', (time_units.formatted()))
@@ -1191,7 +1206,7 @@ def main():
             
     g.update({
         'time_units': time_units,
-        'logfile': f'cfizer_{datetime.now().isoformat(sep="_", timespec="minutes")}.log'
+        'logfile': f'cfizer_{datetime.now().isoformat(sep="_", timespec="minutes").replace(":", "")}.log'
     })   # , 'reference_vars': g['reference_vars']
         # These are global variables (not constants), but must be passed 
         # explicitly to any functions that may run on a separate process.
@@ -1268,42 +1283,11 @@ def main():
                         ])
                     )
 
-    # TODO: generate logfile, containing all configuration details & file conversion history.
-    for k, v in g.items():
-        if isinstance(v, dict):
-            audit_trail[str(k)] = {}
-            for k1, v1 in v.items():
-                if isinstance(v1, dict):
-                    audit_trail[str(k)][str(k1)] = {}
-                    for k2, v2 in v1.items():
-                        if isinstance(v2, dict):
-                            audit_trail[str(k)][str(k1)][str(k2)] = {}
-                            for k3, v3 in v2.items():
-                                if k3 == 'ref_array': continue
-                                if isinstance(v3, dict):
-                                    audit_trail[str(k)][str(k1)][str(k2)][str(k3)] = {}
-                                    for k4, v4 in v3.items():
-                                        audit_trail[str(k)][str(k1)][str(k2)][str(k3)][str(k4)] = str(v4)
-                                elif isinstance(v3, (list, tuple, set)):
-                                    audit_trail[str(k)][str(k1)][str(k2)][str(k3)] = [
-                                        str(x) for x in v3
-                                    ]
-                                else:
-                                    audit_trail[str(k)][str(k1)][str(k2)][str(k3)] = str(v3)
-                        elif isinstance(v2, (list, tuple, set)):
-                            audit_trail[str(k)][str(k1)][str(k2)] = [
-                                str(x) for x in v2
-                            ]
-                        else:
-                            audit_trail[str(k)][str(k1)][str(k2)] = str(v2)
-                elif isinstance(v1, (list, tuple, set)):
-                    audit_trail[str(k)][str(k1)] = [str(x) for x in v1]
-                else:
-                    audit_trail[str(k)][str(k1)] = str(v1)
-        elif isinstance(v, (list, tuple, set)):
-            audit_trail[str(k)] = [str(x) for x in v]
-        else:
-            audit_trail[str(k)] = str(v)
+    # Generate logfile, containing all configuration details & file conversion 
+    # history.
+    # First ensure all data are strings, for YAML output
+    audit_trail = dict_strings(g)
+    
     audit_trail['warnings'] = list(set([str(e) for e in warnings]))
     audit_trail['processing'] = {}
     for k, group in group_by_dim.items():
@@ -1318,8 +1302,14 @@ def main():
                 ] 
             }
         })
-    with open(op.join(target_dir, g['logfile']), 'w') as logfile:
-        yaml.safe_dump(audit_trail, logfile)
+    try:
+        with open(op.join(target_dir, g['logfile']), 'w') as logfile:
+            yaml.safe_dump(audit_trail, logfile)
+    except Exception as e:
+        sys.exit(
+            f"{e}\nUnable to create log file referred to in history attribute\n"
+            f"{op.join(target_dir, g['logfile'])}."
+        )
 
     # Output list of actions taken: each list of merged files & what file they were merged into; each split file and list of files it was split into; each file processed without merge/split & what its new version is called.
     print("\nSUMMARY\n=======")
@@ -1334,8 +1324,7 @@ def main():
             )
         )
     print()
-    # Garbage collection if required.
-
+    
     end_time = perf_counter()
     if g['verbose']: print(f"         Main app process {os.getpid()} took "
                       f"{end_time - start_time} seconds.")

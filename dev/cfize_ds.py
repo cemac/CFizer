@@ -11,6 +11,12 @@ import numpy as np
 
 
 def get_n_dims(dataset: xr.Dataset) -> int:
+    if not g:
+        raise NameError(
+            f"Process {os.getpid()}: get_time_var: Global dictionary g not "
+            f"available."
+        )
+
     return max([
         len(dataset[v].dims) for v in dataset.variables 
         if v != g['CONFIG']['options_database']['variable']
@@ -18,6 +24,12 @@ def get_n_dims(dataset: xr.Dataset) -> int:
 
 
 def is_monc(dataset: xr.Dataset) -> bool:
+    if not g:
+        raise NameError(
+            f"Process {os.getpid()}: get_time_var: Global dictionary g not "
+            f"available."
+        )
+
     return g['CONFIG']['monc_id_attribute'] in set(dataset.attrs).union(set(dataset.variables))
 
 
@@ -378,6 +390,13 @@ class MoncDs:
                 )
         else:
             # Units specified in vocabulary.
+            # Check any new unit specified is valid
+            if not Units(updates['units']).isvalid:
+                raise VocabError(
+                    f"update_units: Invalid units specified in vocabulary "
+                    f"for ({self.n_dims}d) variable {var}."
+                )
+            
             # if variable is a time coordinate:
             if var == (
                 self.time_var or 
@@ -418,14 +437,7 @@ class MoncDs:
                 self.ds[var].attrs['axis'] = 'T'
 
             else:
-                # Check any new unit specified is valid
-                if Units(updates['units']).isvalid:
-                    new_units = Units(updates['units'])
-                else:
-                    raise VocabError(
-                        f"update_units: Invalid units specified in vocabulary "
-                        f"for ({self.n_dims}d) variable {var}."
-                    )
+                new_units = Units(updates['units'])
                 
                 # If spatial coordinate variable, add/update any specified or 
                 # implied axis.
