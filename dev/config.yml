@@ -7,7 +7,7 @@ time_units: seconds  # Base unit, or full in format 's since 2019-05-14 00:00+00
 compression:  # Compression for NetCDF4 output files. See https://unidata.github.io/netcdf4-python/efficient-compression-of-netcdf-variables
   'on': True  # True/False
   'type': zlib  # compression type
-  'level': 2  # 1-9, with 1 being lowest level (fastest).
+  'level': 1  # 1-9, with 1 being lowest level (fastest).
 dimension_groups:
   0: '0+1d'
   1: '0+1d'

@@ -70,5 +70,5 @@ class TimeUnits(Units):
         except AttributeError:
             return False
         except Exception as e:
-            print('calendars_match function:', e)
+            print('calendars_match function:', str(type(e)) + ': ' + e)
             return False

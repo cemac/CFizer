@@ -1,21 +1,16 @@
 #!/usr/bin/env python
 
-# Initialise, incl. from VOCAB & g['CONFIG'] files.
-# from configure import *
-from startup import *  # tune this to avoid importing unneeded variables.
+from startup import *
 import xarray as xr
 import os
 import os.path as op
 from glob import iglob
 from cfunits import Units
-# import numpy as np
 from datetime import datetime, timezone
 import typing
-# from utils import type_from_str, tf, performance_time
-# from dask.diagnostics import ProgressBar
 from time import perf_counter, localtime, strftime
 import argparse
-from multiprocessing import Process, Pool #, set_start_method  # multiprocess not available in Jaspy environment.
+from multiprocessing import Pool  # multiprocess not available in Jaspy environment.
 from cfize_ds import *
 from units import TimeUnits
 from groups import DsGroup, globals_to_vars
@@ -37,29 +32,14 @@ def process_large(
     warnings = []
     errors = []
     log = []
-    
     update_globals = {}  # This is not currently used, but is here for consistency with cf_merge
-
-    # time_units = shared['time_units']
     target_dir = shared['target_dir']
-    # reference_vars = shared['reference_vars']
-
-    # if global_vars:
-    #     global reference_vars, vocabulary
-    #     reference_vars = global_vars['reference_vars']
-    #     vocabulary = global_vars['vocabulary']
-
     group.processed = []
 
     if shared['verbose']:
         log.append(f"{strftime('%H:%M:%S', localtime())} Process {os.getpid()}: process_large running on group "
                    f"{group.name} - file {op.basename(filepath)}. Title passed "
                    f"in: {title}.")
-        # print(
-        #     f"Process {os.getpid()}: process_large running on group "
-        #     f"{group.name} - file {op.basename(filepath)}."
-        #     f"Title passed in: {title}."
-        # )
     
     with xr.open_dataset(filepath, 
                          decode_times=False
@@ -71,20 +51,17 @@ def process_large(
 
         # Assign any required global attributes to variables, 
         # with associated attributes. Remove global attribute.
-        '''
-        Assume these are only correct for last time-point in series.
-        '''
-        
-        last_time_point = dataset[group.time_var].data[-1]  # time_var[i]
+        # Assume these are only correct for last time-point in series.
+        last_time_point = dataset[group.time_var].data[-1]
         try:
             new_vars = globals_to_vars(
                         ds=dataset, 
                         time_var=group.time_var, 
                         shared=shared,
                         last_time_point=last_time_point
-            )  # time_var[i]
+            )
         except Exception as e:
-            errors.append['process_large: globals_to_vars: ' + str(e)]
+            errors.append['process_large: globals_to_vars: ' + str(type(e)) + ': ' + str(e)]
             return {
                 'warnings': warnings,
                 'errors': errors,
@@ -117,14 +94,14 @@ def process_large(
         except (ConfigError or VocabError or AttributeError) as e:
             log += monc_ds.log
             errors.append('process_large: MoncDs.cfize: ' + str(e))
-            warnings += monc_ds.warnings
+            warnings += list(set(monc_ds.warnings))
             return {
                 'warnings': warnings,
                 'errors': errors,
                 'log': log
             }
         log += monc_ds.log
-        warnings += monc_ds.warnings
+        warnings += list(set(monc_ds.warnings))
         
 
         if group.action == 'split':
@@ -142,12 +119,13 @@ def process_large(
             )
             # processed only ever needs to hold latest collection of datasets.
         else:
-            processed = monc_ds.ds  # Will this persist after context of ds ends?
+            processed = monc_ds.ds
 
     writers = []
     # For each new dataset:
     for i, ds in enumerate(processed):
-        # Update required global attributes (MONC time, previous diagnostic write at).
+        # Update required global attributes 
+        # (MONC time, previous diagnostic write at).
         for attr, (func, attr_type) in split_attrs.items():
             if attr in ds.attrs:
                 ds.attrs[attr] = attr_type(func(i, processed))
@@ -173,7 +151,7 @@ def process_large(
         
         # Update history attribute(s)
         history = datetime.now().isoformat() + f": output file {op.basename(filepath)} processed for CF compliance using CFizer version {VERSION} (https://github.com/cemac/CFizer); configuration and source files listed in log file {shared['logfile']}"
-        ds.attrs['history'] = history
+        ds.attrs['history'] = ds.attrs['history'] + history if 'history' in ds.attrs else history
 
         # set filepath
         filepath = op.join(
@@ -202,10 +180,6 @@ def process_large(
                 f"{strftime('%H:%M:%S', localtime())} Process {os.getpid()}: "
                 f"preparing delayed writer for {filepath}."
             )
-            # print(
-            #     f"Process {os.getpid()}: preparing delayed writer for "
-            #     f"{filepath}."
-            # )
         try:
             if shared['verbose']: w_start = perf_counter()
             writers.append(ds_to_nc_dask(ds=ds,
@@ -221,7 +195,7 @@ def process_large(
             ds.close()
             group.processed.append(filepath)
         except Exception as e:
-            errors.append('process_large: ds_to_nc_dask: ' + str(e))
+            errors.append('process_large: ds_to_nc_dask: ' + str(type(e)) + ': ' + str(e))
             return {
                 'warnings': warnings,
                 'errors': errors,
@@ -233,7 +207,6 @@ def process_large(
             f"{strftime('%H:%M:%S', localtime())} Process {os.getpid()}: "
             f"Computing writes."
             )
-        # print(f"Process {os.getpid()}: Computing writes.")
     try:
         [perform_write(writer, shared=shared) for writer in writers]
         for writer in writers:
@@ -245,7 +218,7 @@ def process_large(
                     f"{perf_counter() - w_start} seconds."
                 )
     except Exception as e:
-        errors.append('process_large: perform_write: ' + str(e))
+        errors.append('process_large: perform_write: ' + str(type(e)) + ': ' + str(e))
         return {
             'warnings': warnings,
             'errors': errors,
@@ -259,10 +232,6 @@ def process_large(
             f"         Process {os.getpid()}: process_large took "
             f"{perf_counter() - start_time} seconds."
         )
-        # print(
-        #     f"Process {os.getpid()}: process_large took "
-        #     f"{perf_counter() - start_time} seconds."
-        # )
 
     return {
         'update_group':{
@@ -274,13 +243,10 @@ def process_large(
         'errors': errors,
         'log': log
     }
-    # return (group, shared)
 
 
 def cf_merge(group: DsGroup, 
              shared: dict) -> str:
-    # global g
-    # g = shared
     errors = []
     warnings = []
     log = []
@@ -289,14 +255,11 @@ def cf_merge(group: DsGroup,
             f"{strftime('%H:%M:%S', localtime())} Process {os.getpid()}: "
             f"cf_merge running on group {group.name}"
         )
-        # print(
-        #     f"Process {os.getpid()}: cf_merge running on group {group.name}"
-        # )
     
     try:
         rtn = group.merge_times(shared=shared)
     except Exception as e:
-        errors.append('cf_merge: DsGroup.merge_times: ' + str(e))
+        errors.append('cf_merge: DsGroup.merge_times: ' + str(type(e)) + ': ' + str(e))
         return {
             'warnings': warnings,
             'errors': errors,
@@ -315,7 +278,7 @@ def cf_merge(group: DsGroup,
     try:
         rtn = group.cfize_and_save(shared=shared)
     except Exception as e:
-        errors.append('cf_merge: DsGroup.cfize_and_save: ' + str(e))
+        errors.append('cf_merge: DsGroup.cfize_and_save: ' + str(type(e)) + ': ' + str(e))
         return {
             'warnings': warnings,
             'errors': errors,
@@ -333,7 +296,7 @@ def cf_merge(group: DsGroup,
                     [str(e) for e in rtn['errors']]
                 )
             )
-        warnings += rtn['warnings'] if 'warnings' in rtn else []
+        warnings += list(set(rtn['warnings'])) if 'warnings' in rtn else []
         if 'log' in rtn and rtn['log']:
             log += rtn['log']
     
@@ -359,19 +322,11 @@ def process_parallel(
                 will still work as normal.
     '''
 
-    # # Update global dict, g, so all new processes inherit up-to-date version.
-    # global g
-    # g = shared
-
-    # target_dir = shared['target_dir']
-    # time_units = shared['time_units']
-    # vocabulary = shared['vocabulary']
     reference_vars = shared['reference_vars']
     warnings = []
     log = ''
     removed = None
 
-    # global reference_vars, vocabulary
     # Verify n_proc + controller doesn't exceed available cores
     # TODO: confirm this works on Jasmin!
     if n_proc + 1 > os.cpu_count(): n_proc = os.cpu_count() - 1
@@ -379,10 +334,7 @@ def process_parallel(
     results = {dim: [] for dim in groups.keys()}  # set up empty dict for results from process pool
 
     # Set up process pool
-    # set_start_method('fork')  # only available on Unix systems. not Mac/Win.
-    # fork method allows each new process to inherit the parent's whole state
-    # (global variables etc). Otherwise, each spawned process will have only
-    # values set at initialisation.
+    # NB: each spawned process will have only values set at initialisation.
     with Pool(processes=n_proc) as pool:
         
         # Allocate datasets to be processed in increasing order of dimensions
@@ -446,15 +398,6 @@ def process_parallel(
                                 [[shared['vocabulary'][v_dim][update_var].update(update_dict) 
                                   for update_var, update_dict in updates.items()] 
                                   for v_dim, updates in update_globals['vocabulary'].items()]
-                                # for v_dim, updates in update_globals['vocabulary'].items():
-                                #     for update_var, update_dict in updates.items():
-                                #         shared['vocabulary'][v_dim][update_var].update(update_dict)
-                        # [reference_vars.update({v: result[v]}) 
-                        #  for v in result.keys() if 'filepath' in result[v]]
-                    # groups[d].processed = [
-                    #     result.get() for result in results[d]
-                    # ]  # This should only set groups[d].processed to its
-                    #     # current value, but serves as a "completed" flag.
                 
                 # Round-robin allocation of file processing to controller and 
                 # workers:
@@ -476,18 +419,6 @@ def process_parallel(
                         )
                 
                 # Now work on remaining files on controller process
-                # group.processed = []
-                # [
-                #     [
-                #         group.processed.append(ds) 
-                #         for ds in process_large(
-                #             filepath=filepath,
-                #             group=group,
-                #             title=title,
-                #             shared=shared
-                #         )
-                #     ] for filepath in for_controller
-                # ]
                 for filepath in for_controller:
                     r = process_large(
                         filepath=filepath,
@@ -515,70 +446,13 @@ def process_parallel(
                             *groups[dim].processed, 
                             *update_group['processed']
                         })
-                        # process_large(
-                            #     filepath=filepath,
-                            #     group=group,
-                            #     title=title,
-                            #     shared=shared
-                            # )[0]
                     else:
                         groups[dim].processed = update_group['processed']
-                        # process_large(
-                        #         filepath=filepath,
-                        #         group=group,
-                        #         title=title,
-                        #         shared=shared
-                        #     )[0]
                     groups[dim].time_var = update_group['time_var'] 
-                
-                # Gather completed jobs
-                # TODO: is this efficient, or can it be done after merging 
-                # groups?
-                # If this moves below, each group's processed attribute should
-                # be updated in the process_large function, then the group
-                # returned.
-                # [result.get() for result in results[dim]]
-                # for result in results[dim]:
-                #     # [update_group, 
-                #     #  update_globals] = result.get()
-                #     r = result.get()
-                #     if 'log' in r and r['log']:
-                #         print(''.join(
-                #             [entry + '\n' for entry in r['log']]
-                #         ))
-                #     if 'errors' in r and r['errors']:
-                #         sys.exit('; '.join([str(e) for e in r['errors']]))
-                #     if 'warnings' in r:
-                #         warnings += r['warnings']
-                #     if 'update_group' in r:
-                #         update_group = r['update_group']
-                #         if groups[dim].processed:
-                #             groups[dim].processed = list(
-                #                 {*groups[dim].processed,
-                #                 *update_group['processed']}
-                #             )
-                #         else:
-                #             groups[dim].processed = update_group['processed']
-                #         groups[dim].time_var = update_group['time_var']
-                #     else:
-                #         update_group = None
-                #     update_globals = r['update_globals'] if 'update_globals' in r else None
-                #     if update_globals:
-                #         if 'vocabulary' in update_globals: 
-                #             [[shared['vocabulary'][v_dim][update_var].update(update_dict) 
-                #                 for update_var, update_dict in updates.items()] 
-                #                 for v_dim, updates in update_globals['vocabulary'].items()]
                     
             # If group is to be merged:
             elif group.action == 'merge':
-                # results[dim] = pool.apply_async(
-                #     func=cf_merge,
-                #     kwds={
-                #         'group': group,
-                #         'time_units': time_units,
-                #         'target_dir': target_dir
-                #     }
-                # )
+                # Send processing & merging of group to pool
                 results[dim].append(
                     pool.apply_async(
                         func=cf_merge,
@@ -594,9 +468,7 @@ def process_parallel(
             else:
                 # ENHANCEMENT: Could still evaluate by size whether it's 
                 # processed locally or passed to the Pool.
-
-                # Round-robin allocation of file processing to controller and 
-                # workers:
+                # Send processing of group to pool.
                 results[dim].append(
                     pool.apply_async(
                         func=cfize_all_datasets,
@@ -662,8 +534,6 @@ def process_parallel(
                 if not groups[dim].processed:
                     groups[dim].processed = []
                 for result in results[dim]:
-                    # [update_group, 
-                    #  update_globals] = result.get()
                     r = result.get()
                     if 'log' in r and r['log'] and shared['verbose']:
                         print(''.join(
@@ -690,12 +560,8 @@ def process_parallel(
                             [[shared['vocabulary'][v_dim][update_var].update(update_dict) 
                                 for update_var, update_dict in updates.items()] 
                                 for v_dim, updates in update_globals['vocabulary'].items()]
-                # [groups.update({dim: result.get()[0]}) for result in results[dim]]
-                # groups[dim].processed = [
-                #     result.get() for result in results[dim]
-                # ]
-                # Delete interim NC files, unless flagged to do otherwise.
-            # TODO: this needs to wait until all 3d are done.
+                
+            # Delete interim NC files, unless flagged to do otherwise.
             if groups[dim].action == 'merge_groups' and not shared['keep_interim']:
                 try:
                     [os.remove(f) for f in groups[dim].filepaths]
@@ -714,12 +580,11 @@ def process_parallel(
                                 op.basename(f) for f in groups[dim].filepaths
                             ])
                         )
-
+    # Use set to exclude duplicate warnings:
     result = {'warnings': list(set([str(e) for e in warnings]))}
     if removed:
         result['interim_files_removed'] = removed
     return result
-    # return {'warnings': warnings}
 
 
 def parallel_merge_groups(
@@ -735,17 +600,14 @@ def parallel_merge_groups(
             return {
                 'errors': ["Merge error in DsGroup.merge_groups: " + str(e)]
             }
-            # sys.exit("Merge error in DsGroup.merge_groups: " + str(e))
         except Exception as e:
             return {
                 'errors': [
-                    "Unexpected error in DsGroup.merge_groups: " + str(e)
+                    "Unexpected error in DsGroup.merge_groups: " + str(type(e)) + ': ' + str(e)
                 ]
             }
-            sys.exit("Unexpected error in DsGroup.merge_groups: " + str(e))
         if merge_log:
             log.append(''.join([entry + '\n' for entry in merge_log]))
-            # print(''.join([entry + '\n' for entry in merge_log]))
     return {'log': log, 'update_group': {'processed': group.processed}}
 
 
@@ -755,7 +617,7 @@ def cfize_all_datasets(
     ) -> list:
     '''
     Should print & return names of saved files
-    TODO: This function still to be written tested.
+    TODO: This function still to be written & tested.
     '''
     
     update_globals = {}
@@ -874,12 +736,6 @@ def process_serial(
             title = group.stem + group.name if group.name not in group.stem else group.stem
             
             group.processed = []
-            # [process_large(
-            #         filepath=filepath,
-            #         group=group,
-            #         title=title,
-            #         shared=shared
-            #     ) for filepath in group.filepaths]
             for filepath in group.filepaths:
                 r = process_large(
                     filepath=filepath,
@@ -908,20 +764,8 @@ def process_serial(
                         *group.processed, 
                         *update_group['processed']
                     })
-                    # process_large(
-                        #     filepath=filepath,
-                        #     group=group,
-                        #     title=title,
-                        #     shared=shared
-                        # )[0]
                 else:
                     group.processed = update_group['processed']
-                    # process_large(
-                    #         filepath=filepath,
-                    #         group=group,
-                    #         title=title,
-                    #         shared=shared
-                    #     )[0]
                 if 'time_var' in update_group:
                     group.time_var = update_group['time_var']
 
@@ -936,11 +780,6 @@ def process_serial(
                 if 'error' in rtn and rtn['error']:
                     sys.exit(log + '\nprocess_serial: DsGroup.merge_times' + str(rtn['error']))
 
-            # group.processed = cf_merge(
-            #         group=group,
-            #         time_units=time_units,
-            #         target_dir=target_dir
-            # )
                 rtn = group.cfize_and_save(shared=shared)
                 if 'errors' in rtn and rtn['errors']:
                     sys.exit('process_serial: DsGroup.cfize_and_save: ' + 
@@ -963,18 +802,13 @@ def process_serial(
                             for update_var, update_dict in updates.items()] 
                             for v_dim, updates in update_globals['vocabulary'].items()]
             except Exception as e:
-                sys.exit('process_serial (merging): ' + str(e))
+                sys.exit('process_serial (merging): ' + str(type(e)) + ': ' + str(e))
     
         # Otherwise, process for CF compliance, but leave dataset as a 
         # single, standalone file.
         else:
             # TODO: to be tested
             group.cf_only(time_units=time_units, target_dir=target_dir)
-            # group.processed = cf_only(
-            #     group=group,
-            #     time_units=time_units,
-            #     target_dir=target_dir
-            # )
 
     # For each set of dimension groups to be merged:
     for to_merge in shared['groups_to_merge'].values():
@@ -992,7 +826,7 @@ def process_serial(
             except xr.MergeError as e:
                 sys.exit("Merge error in DsGroup.merge_groups: " + str(e))
             except Exception as e:
-                sys.exit("Unexpected error in DsGroup.merge_groups: " + str(e))
+                sys.exit("Unexpected error in DsGroup.merge_groups: " + str(type(e)) + ': ' + str(e))
             if merge_log:
                 # log += ''.join([entry + '\n' for entry in merge_log]
                 print(''.join([entry + '\n' for entry in merge_log]))
@@ -1000,7 +834,6 @@ def process_serial(
         groups[re.split(merger.stem,merger.name)[1]] = merger
 
         # Delete interim NC files, unless flagged to do otherwise.
-        # TODO: this needs to wait until all 3d are done.
         if not shared['keep_interim']:
             try:
                 [os.remove(f) for f in merger.filepaths]
@@ -1019,6 +852,7 @@ def process_serial(
                             op.basename(f) for f in merger.filepaths
                         ])
                     )
+    # Use set to exclude duplicate warnings:
     result = {'warnings': list(set([str(e) for e in warnings]))}
     if removed:
         result['interim_files_removed'] = removed
@@ -1039,11 +873,6 @@ def sort_nc(directory, shared: dict) -> [dict, list]:
     
     if shared['verbose']: print(strftime('%H:%M:%S', localtime()), 'Categorising files by dimension')
 
-    # global vocabulary, reference_vars
-
-    # by_dim = {n_dim: DsGroup(
-    #     name=group, n_dims=n_dim, action=g['CONFIG']['group_actions'][group], shared=shared
-    # ) for n_dim, group in g['CONFIG']['dimension_groups'].items()}
     by_dim = {}
     for n_dim, group in shared['CONFIG']['dimension_groups'].items():
         by_dim[n_dim] = DsGroup(
@@ -1073,11 +902,9 @@ def sort_nc(directory, shared: dict) -> [dict, list]:
                 n_dims = get_n_dims(ds) - 1  # Subtract 1 for time.
                 # Add filepath to relevant dimension group.
                 by_dim[n_dims].add(filepath=filepath)
-                # print(f"{op.basename(filepath)}: {n_dims} spatial dimensions.")
             else:
                 # Categorise as potential input file
                 input_files.append(filepath)
-                # print(f"{op.basename}: possible input file.")
     
     return [by_dim, input_files]
 
@@ -1243,8 +1070,6 @@ def main():
 
     start_time = perf_counter()  # wrapping in performance counter doesn't work with multiprocessing.
 
-    # audit_trail['warnings'] = []
-
     if g['verbose']: print(f"{strftime('%H:%M:%S', localtime())} "
                       f"Main app process id: {os.getpid()}")  # , started {start_time}
 
@@ -1270,7 +1095,7 @@ def main():
                 # If no time zone specified, default to UTC, as per CF.
                 ref_time = ref_time.replace(tzinfo=timezone.utc)
         except Exception as e:
-            sys.exit(f"{ref_time_str} is an invalid reference time. {str(e)}")
+            sys.exit(f"{ref_time_str} is an invalid reference time. {str(type(e))}: {str(e)}")
     else:
         ref_time = None
 
@@ -1282,6 +1107,7 @@ def main():
         except Exception as e:
             sys.exit(
                 f"Calendar {args.calendar} specified in arguments is not valid."
+                f"{str(type(e))}: {e}"
             )  # This should not be possible
     if ref_time:
         try:
@@ -1336,7 +1162,7 @@ def main():
     try:
         [group_by_dim, input_files] = sort_nc(source_dir, shared=g)
     except Exception as e:
-        sys.exit('sort_nc: ' + str(e))
+        sys.exit('sort_nc: ' + str(type(e)) + ': ' + str(e))
     
     # ID time variable of each group from VOCAB.
     
@@ -1360,7 +1186,7 @@ def main():
     g.update({
         'time_units': time_units,
         'logfile': f'cfizer_{datetime.now().isoformat(sep="_", timespec="minutes").replace(":", "")}.log'
-    })   # , 'reference_vars': g['reference_vars']
+    })
         # These are global variables (not constants), but must be passed 
         # explicitly to any functions that may run on a separate process.
     
@@ -1388,60 +1214,15 @@ def main():
                 shared=g
             ))
     except (ConfigError or VocabError) as e:
-        sys.exit('Processing: ' + str(e))
+        sys.exit('Processing: ' + str(type(e)) + ': ' + str(e))
     except Exception as e:
-        sys.exit('Processing: ' + str(e))
-
-    # TODO: move the following to the process_* routines?
-    # For each set of dimension groups to be merged:
-    # for name, groups in g['groups_to_merge'].items():
-    #     # Create new group, comprising the groups to be merged.
-    #     merger = DsGroup(groups=groups, shared=g)
-    #     if merger.log:
-    #         print(
-    #             ''.join([entry + '\n' for entry in merger.log])
-    #         )
-        
-    #     if merger.action == 'merge_groups':
-    #         # Merge each group's resultant single dataset
-    #         try:
-    #             (merged_file, log) = merger.merge_groups(shared=g)
-    #         except xr.MergeError as e:
-    #             sys.exit("Merge error in DsGroup.merge_groups: " + str(e))
-    #         except Exception as e:
-    #             sys.exit("Unexpected error in DsGroup.merge_groups: " + str(e))
-    #         if log:
-    #             print(''.join([entry + '\n' for entry in log]))
-            
-    #     group_by_dim[re.split(merger.stem,merger.name)[1]] = merger
-
-    #     # Delete interim NC files, unless flagged to do otherwise.
-    #     # TODO: this needs to wait until all 3d are done.
-    #     if not args.keep_interim:
-    #         try:
-    #             [os.remove(f) for f in merger.filepaths]
-    #         except OSError as e:
-    #             if not g['quiet']:
-    #                 print(strftime('%H:%M:%S', localtime()), "Failed to delete interim NC files. " + str(e))
-    #         else:
-    #             audit_trail['interim_files_removed'] = [
-    #                 op.basename(f) for f in merger.filepaths
-    #             ]
-    #             if g['verbose']:
-    #                 print(
-    #                     f"{strftime('%H:%M:%S', localtime())} Removed interim "
-    #                     f"files:\n        ", 
-    #                     "\n         ".join([
-    #                         op.basename(f) for f in merger.filepaths
-    #                     ])
-    #                 )
+        sys.exit('Processing: ' + str(type(e)) + ': ' + str(e))
 
     # Generate logfile, containing all configuration details.
     # First ensure all data are strings, for YAML output
     audit_trail.update(dict_strings(g))
     audit_trail.pop('groups_to_merge')
-    # Add warnings & file conversion history to audit trail
-    # audit_trail['warnings'] = list(set([str(e) for e in warnings]))
+    # Add file conversion history to audit trail
     audit_trail['processing'] = {}
     for k, group in group_by_dim.items():
         audit_trail['processing'].update({
@@ -1462,6 +1243,7 @@ def main():
         sys.exit(
             f"{e}\nUnable to create log file referred to in history attribute\n"
             f"{op.join(target_dir, g['logfile'])}."
+            f"{str(type(e))}: {e}"
         )
 
     # Output list of actions taken: each list of merged files & what file they were merged into; each split file and list of files it was split into; each file processed without merge/split & what its new version is called.
@@ -1488,7 +1270,6 @@ def main():
         if g['quiet']:
             sys.exit('Quiet mode: warnings suppressed.')
         else:
-            # Use set to exclude duplicate warnings.
             sys.exit('\n'.join([str(e) for e in audit_trail['warnings']]))
     else:
         sys.exit(0)

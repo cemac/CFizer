@@ -1,6 +1,3 @@
-from utils import str_to_class, first_rest
-
-
 class ConfigError(Exception):
     "Raised when something critical is missing from, or incorrectly defined in, config.yml. This should cause the program to exit immediately."
     def __init__(self, *args: object) -> None:

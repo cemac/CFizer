@@ -1,7 +1,7 @@
 '''
 Name:           cfizer.py
 Author:         Cameron Wilson, CEMAC, University of Leeds
-Date:           August 2023
+Date:           September 2023
 CFizer Version: See VERSION
 
 '''
@@ -28,8 +28,8 @@ split_attrs = {}
 # import numpy as np
 import os
 import yaml
-from __init__ import *  # If init takes care of once-only declarations, this module allows them to be imported en masse to other routines, without their being rerun, I think.
-# from utils import vocab_from_xls
+from utils import str_to_class, first_rest
+from __init__ import *  # If init takes care of once-only declarations, this module allows them to be imported en masse to other routines, without their being rerun, I think. This to be updated for released version.
 
 def initialise() -> dict:
     global g, split_attrs
@@ -162,8 +162,8 @@ def initialise() -> dict:
             # Remove any invalid fields from variable.
             [g['vocabulary'][dim][variable].pop(k) for k in to_drop]  # attributes.pop(k)
             
-            # If any variables are perturbations that the user wants to convert to
-            # an absolute quantity, record name of reference variable.
+            # If any variables are perturbations that the user wants to convert 
+            # to an absolute quantity, record name of reference variable.
             if 'perturbation_to_absolute' in attributes and attributes['perturbation_to_absolute']:
                 if 'reference_variable' not in attributes or not attributes['reference_variable']:
                     raise KeyError(f'setup: {variable}: If '
@@ -195,52 +195,3 @@ def initialise() -> dict:
     print("Vocabulary validated.")
 
     return g
-
-# COMPRESSION = (True, 'zlib', 2) # True/False, compression type, complevel (1:9)
-#     # See https://unidata.github.io/netcdf4-python/efficient-compression-of-netcdf-variables
-
-# g['CONFIG']['dimension_groups'] = {
-#     0: '0+1d', 
-#     1: '0+1d', 
-#     2: '2d', 
-#     3: '3d'
-# }
-
-# g['CONFIG']['group_actions'] = {
-#     '0+1d': 'merge',
-#     '2d': 'merge', 
-#     '3d': 'split'
-#     }
-
-# g['CONFIG']['monc_id_attribute'] = 'MONC timestep'  # It is essential that this be preserved across all modified datasets, either as attribute or variable.
-
-# g['CONFIG']['options_database'] = {
-#     'variable': 'options_database',
-#     'dimensions': {'number_options', 'kvp', 'string'}
-# }
-
-# g['FROM_INPUT_FILE'] = {
-#     'reftime': 'time'
-# }
-
-# g['CONFIG']['chunking'] = {'z': 2, 'zn':2}  # Ideally chunk sizes should be power of 2.
-
-# g['CONFIG']['dephy_true_if'] = ('dephy_file',)  # 'dephy_forcings_enabled'
-# g['CONFIG']['drop_for_dephy'] = ("longitude", "latitude", "z0")
-
-# Global attributes and their Numpy data types.
-# g['do_not_propagate'] = {'MONC timestep': np.int32}
-# g['split_attrs'] = {
-#     'MONC time': (
-#         lambda i, ds_list: ds_list[i]['time'].data.tolist(), 
-#         np.float64
-#     ),
-#     'Previous diagnostic write at': (
-#         lambda i, ds_list: ds_list[0].attrs['Previous diagnostic write at'] 
-#         if i == 0 else ds_list[i - 1]['time'].data.tolist(), 
-#         np.float64
-#     )
-# }
-# g['group_attrs'] = {'created': datetime}
-
-

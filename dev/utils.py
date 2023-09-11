@@ -11,7 +11,6 @@ def str_to_class(module: str, class_name: str):
 
 
 def first_rest(first_var: str, rest_var: str, module_type: str, i: int, ds_list:list[xarray.Dataset]):
-    # print("first_rest received:", first_var, rest_var, np_type, i, ds_list)
     var = first_var if i == 0 else rest_var
     if var in ds_list[0].variables:
         return str_to_class(*module_type.split('.'))(ds_list[0][var].data.tolist())
