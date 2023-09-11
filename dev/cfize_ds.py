@@ -573,7 +573,8 @@ class MoncDs:
                         self.ds.attrs[attr] = shared['CONFIG'][attr]
                 elif (attr in shared['CONFIG'] and shared['CONFIG'][attr]) or (attr in defaults and defaults[attr]):
                     self.ds.attrs[attr] = shared['CONFIG'][attr] if attr in shared['CONFIG'] else defaults[attr]
-                else:
+                elif attr != 'history':
+                    # History attribute is written at time of file writing.
                     self.warnings.append(ConfigWarning(
                         f"add_cf_attrs: CF-1.10, section 2.6.2, recommends {attr} be included as a global attribute. This can be specified in config.yml."
                     ))

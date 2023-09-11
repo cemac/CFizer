@@ -150,7 +150,7 @@ def process_large(
             ] = ds.attrs.pop(attr)
         
         # Update history attribute(s)
-        history = datetime.now().isoformat() + f": output file {op.basename(filepath)} processed for CF compliance using CFizer version {VERSION} (https://github.com/cemac/CFizer); configuration and source files listed in log file {shared['logfile']}"
+        history = datetime.now().isoformat(sep=' ', timespec='seconds') + f": output file {op.basename(filepath)} processed for CF compliance using CFizer version {VERSION} (https://github.com/cemac/CFizer); configuration and source files listed in log file {shared['logfile']}"
         ds.attrs['history'] = ds.attrs['history'] + history if 'history' in ds.attrs else history
 
         # set filepath

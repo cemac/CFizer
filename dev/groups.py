@@ -582,7 +582,7 @@ class DsGroup:
         filepath = op.join(shared['target_dir'], f"{merged.attrs['title']}.nc")
 
         # Update history attribute
-        history = datetime.now().isoformat() + f": interim files {[op.basename(f) for f in self.filepaths]} processed for CF compliance using CFizer version {VERSION} (https://github.com/cemac/CFizer); configuration and source files listed in log file {shared['logfile']}"
+        history = datetime.now().isoformat(sep=' ', timespec='seconds') + f": interim files [{', '.join([op.basename(f) for f in self.filepaths])}] processed for CF compliance using CFizer version {VERSION} (https://github.com/cemac/CFizer); configuration and source files listed in log file {shared['logfile']}"
         merged.attrs['history'] = merged.attrs['history'] + history if 'history' in merged.attrs else history
 
         # Set encoding
@@ -733,7 +733,7 @@ class DsGroup:
                         }
             
             # Update history attribute
-            history = datetime.now().isoformat() + f": file(s) processed for CF compliance using CFizer version {VERSION} (https://github.com/cemac/CFizer); configuration and source files listed in log file {shared['logfile']}"
+            history = datetime.now().isoformat(sep=' ', timespec='seconds') + f": file(s) processed for CF compliance using CFizer version {VERSION} (https://github.com/cemac/CFizer); configuration and source files listed in log file {shared['logfile']}"
             cf_ds.attrs['history'] = cf_ds.attrs['history'] + history if 'history' in cf_ds.attrs else history
             
             # Set encoding
