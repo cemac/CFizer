@@ -1,5 +1,6 @@
 test_data/
 .*/
-.*
+.DS_Store
 *.ipynb
 __pycache__/
+dev/do_not_track/
