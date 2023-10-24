@@ -23,8 +23,8 @@ The most important setup for users is to check/complete the `vocabulary.yml` and
 - `conventions`:    Set automatically by CFizer.
 
 # Running
-To run this development version, from this directory:
-`./dev/algorithm.py [options] <source_directory>`
+To run this version, from this directory:
+`./src/cfize.py [options] <source_directory>`
 where `<source_directory>` is the path for the directory containing the MONC NC files to be processed.
 
 ## Options
