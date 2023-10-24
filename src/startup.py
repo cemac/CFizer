@@ -18,11 +18,33 @@ CF_ATTRIBUTES = {'title',
                     'Conventions'}
 DEFAULT_CALENDAR = 'proleptic_gregorian'  # As per ISO 8601:2004.
 
+'''
+Define required fields in vocabulary file/dictionary, as key: value pairs.
+If a set given as value, this contains all valid values.
+If an empty dictionary is given as a value, valid values for that field are
+themselves key: value pairs, where the key is the existing field value and 
+the value is the new field value, e.g. 'dimension_changes': {'x': 'xu'} means 
+that, for the specified variable, dimension x will be replaced by dimension 
+xu.
+If an empty list is given as a value, the expected value is a list.
+If perturbation_to_absolute == True, reference_value must be the name of the 
+variable that is added to make the conversion.
+'''
+VOCAB_FIELDS = {
+    'updated_name': None, 
+    'units': None,
+    'axis': None,
+    'standard_name': None,
+    'long_name': None,
+    'dimension_changes': {},
+    'perturbation_to_absolute': {True, False},
+    'reference_variable': None
+}
+
 # Use a quasi-global dictionary to pass global variables between functions.
 # This ensures all processes are using up-to-date versions.
 g = {}
 split_attrs = {}
-
 
 # from datetime import datetime
 # import numpy as np
@@ -31,44 +53,32 @@ import yaml
 from __init__ import *  # If init takes care of once-only declarations, this module allows them to be imported en masse to other routines, without their being rerun, I think.
 # from utils import vocab_from_xls
 
+# app_dir = os.path.dirname(__file__)
+
+
 def initialise() -> dict:
     global g, split_attrs
-    '''
-    Define required fields in vocabulary file/dictionary, as key: value pairs.
-    If a set given as value, this contains all valid values.
-    If an empty dictionary is given as a value, valid values for that field are
-    themselves key: value pairs, where the key is the existing field value and 
-    the value is the new field value, e.g. 'dimension_changes': {'x': 'xu'} means 
-    that, for the specified variable, dimension x will be replaced by dimension 
-    xu.
-    If an empty list is given as a value, the expected value is a list.
-    If perturbation_to_absolute == True, reference_value must be the name of the 
-    variable that is added to make the conversion.
-    '''
-    VOCAB_FIELDS = {
-        'updated_name': None, 
-        'units': None,
-        'axis': None,
-        'standard_name': None,
-        'long_name': None,
-        'dimension_changes': {},
-        'perturbation_to_absolute': {True, False},
-        'reference_variable': None
-    }
 
-    app_dir = os.getcwd()
-    """TODO: UPDATE FOR PRODUCTION VERSION'S NEW DIRECTORY STRUCTURE"""
-    if 'dev' not in app_dir:
-        if 'test_data' not in app_dir:
-            app_dir = os.path.join(app_dir, 'dev')
-        else:
-            app_dir = os.path.join(os.path.dirname(app_dir), 'dev')
+    # app_dir = os.getcwd()
+    root_dir = os.path.dirname(os.path.dirname(__file__))
+    # if 'dev' not in app_dir:
+    #     if 'test_data' not in app_dir:
+    #         app_dir = os.path.join(app_dir, 'dev')
+    #     else:
+    #         app_dir = os.path.join(root_dir, 'dev')
+    print(f"Application directory: {os.path.dirname(__file__)}")
+    print(f"Root directory: {root_dir}")
+    print(f"Excel to YAML tool: {os.path.join(root_dir, 'dev/vocab_from_xlsx.py')}")
 
     try:
-        config_file = open(os.path.join(app_dir, "config.yml"))
+        # config_file = open(os.path.join(app_dir, "config.yml"))
+        config_file = open(os.path.join(root_dir, "config.yml"))
     except:
+        # raise OSError(
+        #     f"config.yml not found in base directory, {app_dir}"
+        # )
         raise OSError(
-            f"config.yml not found in application directory, {app_dir}"
+            f"config.yml not found in base directory, {root_dir}"
         )
     g['CONFIG'] = yaml.safe_load(config_file)
     config_file.close()
@@ -110,17 +120,25 @@ def initialise() -> dict:
                 for k, v in g['CONFIG']['group_attributes'].items()}
 
     try:
-        vocab_file = open(os.path.join(app_dir, "vocabulary.yml"))
+        # vocab_file = open(os.path.join(app_dir, "vocabulary.yml"))
+        vocab_file = open(os.path.join(root_dir, "vocabulary.yml"))
     except:
+        # exit(
+        #     f"Vocabulary file ({os.path.join(app_dir, 'vocabulary.yml')}) not "
+        #     f"found. To derive from Excel spreadsheet, run the following "
+        #     f"command from the application directory:"
+        #     f"{os.path.join(app_dir, 'vocab_from_xlsx.py')}"
+        # )
         exit(
-            f"Vocabulary file ({os.path.join(app_dir, 'vocabulary.yml')}) not "
+            f"Vocabulary file ({os.path.join(root_dir, 'vocabulary.yml')}) not "
             f"found. To derive from Excel spreadsheet, run the following "
-            f"command from the application directory:"
-            f"{os.path.join(app_dir, 'vocab_from_xlsx.py')}"
+            f"command:"
+            f"{os.path.join(root_dir, 'dev/vocab_from_xlsx.py')}"
         )
     g['vocabulary'] = yaml.safe_load(vocab_file)
     vocab_file.close()
-    print(f"Vocabulary loaded from {os.path.join(app_dir, 'vocabulary.yml')}.")
+    # print(f"Vocabulary loaded from {os.path.join(app_dir, 'vocabulary.yml')}.")
+    print(f"Vocabulary loaded from {os.path.join(root_dir, 'vocabulary.yml')}.")
     g['reference_vars'] = {}
 
     # If dimensions (outermost key) aren't simply digits, assume the dimension 
@@ -134,7 +152,8 @@ def initialise() -> dict:
             to_drop = []
             for k, v in attributes.items():
                 if k not in VOCAB_FIELDS:
-                    print(f'WARNING: {os.path.join(app_dir, "vocabulary.yml")} contains invalid field: {k}')
+                    # print(f'WARNING: {os.path.join(app_dir, "vocabulary.yml")} contains invalid field: {k}')
+                    print(f'WARNING: {os.path.join(root_dir, "vocabulary.yml")} contains invalid field: {k}')
                     to_drop.append(k)
                     continue
                     # raise KeyError(f'Vocabulary file contains invalid field: {k}')
