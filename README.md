@@ -37,3 +37,30 @@ Option | Argument | Function | Example
 `--keep-interim`,`-i`||Set if multiple dimension sets are being merged, but you want to keep the single-dimension-set files as well. By default, these redundant files are deleted.|
 `--verbose`, `-v`||Set to report all progress and function timings to stdout.|
 `--quiet`, `-q`||Set to suppress any warnings normally printed to stdout upon completion.|
+
+## Creating Vocabulary File from Excel Spreadsheet
+
+The `vocab_from_xlsx` tool creates the required `vocabulary.yml` file from a Microsoft Excel spreadsheet, providing it is in the expected format:
+
+- Columns:
+    - `updated_name`
+    - `units` (CF-compliant)
+    - `axis` (CF-compliant)
+    - `standard_name` (CF-compliant)
+    - `long_name`
+    - `dimension_changes` (in form `current:new`)
+    - `perturbation_to_absolute` (value either `True` or `False`)
+    - `reference_variable` (for `perturbation_to_absolute` only)
+
+Any field can be left blank if not needed (e.g. if field is already CF-compliant or, in the case of variable names, if no change is needed).
+
+Any additional columns will be ignored.
+
+Because the vocabulary is organised by the number of spatial dimensions for a given variable (and output file), the spreadsheet should likewise be divided by dimensions. Before each set of variables should be a row containing only a dimensionality indicator in the first cell, e.g. `0D` for files/variables with only a time dimension and `3D` for file/variables with 3 spatial dimensions as well as time.
+
+## Usage
+
+From the root directory:
+`./dev/vocab_from_xlsc.py <path_to_spreadsheet>`
+
+The new vocabulary YAML file will be created in the CFizerroot directory.
