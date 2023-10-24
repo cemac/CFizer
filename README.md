@@ -63,4 +63,4 @@ Because the vocabulary is organised by the number of spatial dimensions for a gi
 From the root directory:
 `./dev/vocab_from_xlsc.py <path_to_spreadsheet>`
 
-The new vocabulary YAML file will be created in the CFizerroot directory.
+The new vocabulary YAML file will be created in the CFizer root directory.
