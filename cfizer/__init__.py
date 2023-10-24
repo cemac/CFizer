@@ -1,4 +1,4 @@
-from utils import str_to_class, first_rest
+from cfizer.utils import str_to_class, first_rest
 
 
 class ConfigError(Exception):

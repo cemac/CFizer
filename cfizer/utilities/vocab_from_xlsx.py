@@ -8,14 +8,15 @@ import os.path as op
 import argparse
 from cfunits import Units
 import sys
+from importlib.resources import files
 # # Workaround to find package directory (https://stackoverflow.com/a/61571300)
 # if os.getcwd() not in sys.path:
 #     sys.path.append(os.getcwd())  # This shouldn't be necessary once packaged
 # # print(sys.path)
 # app_dir = os.path.dirname(__file__)
-root_dir = os.path.dirname(os.path.dirname(__file__))
-sys.path.append(os.path.join(root_dir, 'src'))
-from startup import VOCAB_FIELDS
+vocab_dir = os.path.dirname(files('cfizer').joinpath('config.yml'))
+# sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from cfizer.startup import VOCAB_FIELDS
 
 
 def vocab_from_xls(filepath: str) -> dict:
@@ -116,7 +117,7 @@ def check_units(vocab: dict) -> dict:
 
 def vocab_to_yaml(vocab: dict) -> str:
     # filepath = op.join(app_dir, 'vocabulary.yml')
-    filepath = op.join(root_dir, 'vocabulary.yml')
+    filepath = op.join(vocab_dir, 'vocabulary.yml')
     if op.exists(filepath):
         while True:
             overwrite = input(
@@ -131,8 +132,8 @@ def vocab_to_yaml(vocab: dict) -> str:
     return filepath
 
 
-if __name__ == '__main__':
-    print("Launching Excel to YAML converter")
+def xlsx_to_yml():
+    # print("Launching Excel to YAML converter")
     parser = argparse.ArgumentParser()
     parser.add_argument(
         'filepath',
@@ -144,7 +145,7 @@ if __name__ == '__main__':
         raise OSError(f"Filepath {excel_file} not found.")
     if not 'xls' in excel_file[-4:]:  # Finds 'xls' or 'xlsx':
         raise TypeError("Filepath must be to an Excel spreadsheet file.")
-    print(f"Processing {excel_file}")
+    # print(f"Processing {excel_file}")
     vocabulary = vocab_from_xls(filepath=excel_file)
     unit_validation = check_units(vocab=vocabulary)
     if not all([u[1] for u in unit_validation.values()]):
@@ -157,3 +158,6 @@ if __name__ == '__main__':
     yaml_file = vocab_to_yaml(vocab=vocabulary)
     print(f"New vocabulary file created: {yaml_file}")
     sys.exit(0)
+
+
+if __name__ == '__main__': xlsx_to_yml()

@@ -2,12 +2,12 @@
 
 # Initialise, incl. from VOCAB & g['CONFIG'] files.
 # from configure import *
-from startup import *  # tune this to avoid importing unneeded variables.
+from cfizer.startup import *  # tune this to avoid importing unneeded variables.
 import xarray as xr
 import os
 import os.path as op
 from glob import iglob
-from cfunits import Units
+# from cfunits import Units
 # import numpy as np
 from datetime import datetime, timezone
 import typing
@@ -16,12 +16,12 @@ import typing
 from time import perf_counter, localtime, strftime
 import argparse
 from multiprocessing import Process, Pool #, set_start_method  # multiprocess not available in Jaspy environment.
-from cfize_ds import *
-from units import TimeUnits
-from groups import DsGroup, globals_to_vars
+from cfizer.cfize_ds import *
+from cfizer.units import TimeUnits
+from cfizer.groups import DsGroup, globals_to_vars
 import re
 import sys
-from utils import dict_strings
+from cfizer.utils import dict_strings
 
 
 def process_large(
@@ -1071,7 +1071,8 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def main():
+def cfize():
+    from cfunits import Units
     start_time = perf_counter()
     # Initialise "global" variables dictionary, to allow passing between 
     # processes.
@@ -1341,4 +1342,4 @@ def main():
         sys.exit(0)
 
 
-if __name__ == '__main__': main()
+if __name__ == '__main__': cfize()

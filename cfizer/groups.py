@@ -3,11 +3,11 @@ import os.path as op
 import os
 import xarray as xr
 from glob import iglob
-from startup import *
+from cfizer.startup import *
 import re
 # from units import TimeUnits
-from cfize_ds import MoncDs
-from utils import type_from_str #, performance_time
+from cfizer.cfize_ds import MoncDs
+from cfizer.utils import type_from_str #, performance_time
 from time import perf_counter, strftime, localtime
 from datetime import datetime
 

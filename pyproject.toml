@@ -9,9 +9,10 @@ requires-python = ">=3.10"
 dependencies = [
     "netcdf4>=1.5.7",
     "xarray>=0.20.1",
-    "pyyaml=6.0",
+    "pyyaml==6.0",
     "cfunits>=3.3.4",
-    "numpy>=1.22.3"
+    "numpy>=1.22.3",
+    "dask"
 ]
 authors = [
   { name="Cameron Wilson", email="C.J.Wilson1@leeds.ac.uk" }
@@ -27,8 +28,11 @@ classifiers = [
 [project.optional-dependencies]
 dev = ["openpyxl>=3.0"]
 
-[project.scripts]
-cfize = "src.cfize:main"
+[tool.setuptools.package-data]
+cfizer = ["vocabulary.yml", "config.yml"]
 
 [project.urls]
 "Homepage" = "https://github.com/cemac/CFizer"
+
+[project.scripts]
+cfize = "cfizer.cfize:cfize"

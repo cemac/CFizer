@@ -1,7 +1,7 @@
 import xarray as xr
-from units import TimeUnits, format_units
-from startup import *
-from utils import type_from_str, generate_coords #, performance_time
+from cfizer.units import TimeUnits, format_units
+from cfizer.startup import *
+from cfizer.utils import type_from_str, generate_coords #, performance_time
 from cfunits import Units
 from dask.delayed import Delayed
 from time import perf_counter, strftime, localtime
