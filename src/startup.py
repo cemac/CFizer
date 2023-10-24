@@ -6,16 +6,21 @@ CFizer Version: See VERSION
 
 '''
 
-VERSION = '0.1.2'
+# VERSION = '0.1.2'
+from importlib.metadata import version
+VERSION = version('cfizer')
+
 CF_VERSION = '1.10'
 
-CF_ATTRIBUTES = {'title', 
-                    'institution', 
-                    'source', 
-                    'history', 
-                    'references', 
-                    'comment',
-                    'Conventions'}
+CF_ATTRIBUTES = {
+    'title', 
+    'institution', 
+    'source', 
+    'history', 
+    'references', 
+    'comment',
+    'Conventions'
+}
 DEFAULT_CALENDAR = 'proleptic_gregorian'  # As per ISO 8601:2004.
 
 '''
