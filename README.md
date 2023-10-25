@@ -6,12 +6,37 @@ CEDA provides an [overview of the CF metadata convention](https://help.ceda.ac.u
 [Full details of the convention are available here.](http://cfconventions.org/Data/cf-conventions/cf-conventions-1.10/cf-conventions.html)
 
 # Installation
+
+## JASMIN
+
 Clone this repository.
 
-If running on JASMIN, load the `jaspy` environment: `module load jaspy/3.10/r20230718`. This contains all the required dependencies.
+Load the `jaspy` environment: `module load jaspy/3.10/r20230718`. This contains all the required dependencies.
+
+Create an empty Anaconda environment in which to install CFizer, and activate it:
+```
+conda env create -n cfizer
+conda activate cfizer
+```
+
+Install CFizer:
+`pip install .`
+
+## Standalone System
+
+Clone this repository.
+
+Create and activate an empty Anaconda environment (as above) or pip venv:
+```
+python -m venv /path/to/cfizer_env
+source /path/to/cfizer_env/bin/activate
+```
+
+Install CFizer (which will install all required dependencies):
+`pip install .`
 
 # Setup
-The most important setup for users is to check/complete the `vocabulary.yml` and `config.yml` files. They define, respectively, how the MONC variables are to be modified for CF compliance, and parameters that should be uniform across a set of files, including the source of the original data.
+The most important setup for users is to check/complete the `cfizer/vocabulary.yml` and `cfizer/config.yml` files. They define, respectively, how the MONC variables are to be modified for CF compliance, and parameters that should be uniform across a set of files, including the source of the original data.
 
 [CF Conventions recommend](http://cfconventions.org/Data/cf-conventions/cf-conventions-1.10/cf-conventions.html#description-of-file-contents) the following global attributes be present in all datasets:
 - `title`:          Set automatically by CFizer, based on file names and any merge/split operations.
@@ -24,7 +49,9 @@ The most important setup for users is to check/complete the `vocabulary.yml` and
 
 # Running
 To run this version, from this directory:
-`./src/cfize.py [options] <source_directory>`
+
+`cfize [options] <source_directory>`
+
 where `<source_directory>` is the path for the directory containing the MONC NC files to be processed.
 
 ## Options
@@ -61,6 +88,6 @@ Because the vocabulary is organised by the number of spatial dimensions for a gi
 ## Usage
 
 From the root directory:
-`./dev/vocab_from_xlsc.py <path_to_spreadsheet>`
+`xlvocab <path_to_spreadsheet>`
 
 The new vocabulary YAML file will be created in the CFizer root directory.
