@@ -7,32 +7,24 @@ CEDA provides an [overview of the CF metadata convention](https://help.ceda.ac.u
 
 # Installation
 
-## JASMIN
-
 Clone this repository.
 
-Load the `jaspy` environment: `module load jaspy/3.10/r20230718`. This contains all the required dependencies.
+**If using on JASMIN**, load the `jaspy` environment: `module load jaspy/3.10/r20230718`. This contains all the required dependencies.
 
 Create an empty Anaconda environment in which to install CFizer, and activate it:
 ```
 conda env create -n cfizer
 conda activate cfizer
 ```
-
-Install CFizer:
-`pip install .`
-
-## Standalone System
-
-Clone this repository.
-
-Create and activate an empty Anaconda environment (as above) or pip venv:
+Alternatively, a pip venv may be used:
 ```
 python -m venv /path/to/cfizer_env
 source /path/to/cfizer_env/bin/activate
 ```
 
-Install CFizer (which will install all required dependencies):
+**Important**: Update the configuration file, `cfizer/config.yml` and, if necessary, the vocabulary (`cfizer/vocabulary.yml`), before installing CFizer (see **Setup** below). Installation creates a copy of these in the virtual environment, so any subsequent changes either need to be made to the version in that environment, or require re-installation.
+
+Install CFizer:
 `pip install .`
 
 # Setup
