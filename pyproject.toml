@@ -39,3 +39,4 @@ cfizer = ["vocabulary.yml", "config.yml"]
 
 [project.scripts]
 cfize = "cfizer.cfize:cfize"
+xlvocab = "cfizer.utilities.vocab_from_xlsx:xlsx_to_yml"
