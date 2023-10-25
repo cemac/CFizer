@@ -1097,8 +1097,12 @@ def cfize():
                       f"Main app process id: {os.getpid()}")  # , started {start_time}
 
     # Validate supplied directory to parse.
+    if g['verbose']:
+        print(f"Application launched from {os.getcwd()}")
+        print(f"Source directory: {args.source_dir}; absolute path: {op.abspath(args.source_dir)}")
+    
     if not op.exists(args.source_dir):
-        sys.exit(OSError(f'Source directory {op.abspath(source_dir)} not found.'))
+        sys.exit(OSError(f'Source directory {op.abspath(args.source_dir)} not found.'))
     source_dir = op.abspath(args.source_dir)
     
     time_units = None
