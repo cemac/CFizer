@@ -1,4 +1,4 @@
-from cfizer.utils import str_to_class, first_rest
+from cfizer.utils import str_to_class, first_rest  # Allows use by all modules
 
 
 class ConfigError(Exception):

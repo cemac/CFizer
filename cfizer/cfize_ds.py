@@ -7,7 +7,6 @@ from dask.delayed import Delayed
 from time import perf_counter, strftime, localtime
 from datetime import datetime
 import numpy as np
-# from cfizer import g['CONFIG']['options_database'], g['CONFIG']
 
 
 def get_n_dims(dataset: xr.Dataset) -> int:
@@ -46,10 +45,6 @@ def split_ds(dataset: xr.Dataset,
             f"{strftime('%H:%M:%S', localtime())} Process {os.getpid()}: "
             f"splitting dataset {dataset.attrs['title']} by {var}."
         )
-        # print(
-        #     f'Process {os.getpid()}: splitting dataset '
-        #     f'{dataset.attrs["title"]} by {var}.'
-        # )
     base_title = dataset.attrs['title'].strip('_ +,.&') + '_'
     grouped = {point: ds.copy(deep=True) for (point, ds) in dataset.groupby(var)}
     for point, ds in grouped.items():
@@ -61,15 +56,7 @@ def split_ds(dataset: xr.Dataset,
                 f"Created new dataset with "
                 f"title, {grouped[point].attrs['title']}"
             )
-            # print(
-            #     f"Process {os.getpid()}: Created new dataset with title, "
-            #     f"{grouped[point].attrs['title']}"
-            # )
     split = list(grouped.values())
-    # log.append(
-    #     "Datasets about to be returned by split_ds have titles: " +
-    #     "; ".join([ds.attrs['title'] for ds in split])
-    # )
     log.append(
         f"         Process {os.getpid()}: split_ds took "
         f"{perf_counter() - start_time} seconds."
@@ -118,7 +105,6 @@ def ds_to_nc_dask(ds: xr.Dataset,
             encoding=encodings, 
             compute=False
         )
-    # writer.compute()
 
 
 # @performance_time
@@ -133,18 +119,14 @@ class MoncDs:
                  time_variable:str=None,
                  n_dims:int=None,
                  title:str=None
-                 ) -> None:  # , group:DsGroup=None,
+                 ) -> None:
         
         self.log = []
         self.warnings = []
         self.ds = dataset
-        # self.time_units = shared['time_units']
-        # self.vocab = shared['vocabulary']
 
         if time_variable:
             self.time_var = time_variable
-        # elif group:
-        #     self.time_var = group.time_var
         else:
             raise AttributeError(
                 "DsGroup: time variable must be specified via the "
@@ -153,16 +135,12 @@ class MoncDs:
         
         if n_dims is not None:
              self.n_dims = n_dims
-        # elif group:
-        #     self.n_dims = group.n_dims
         else:
             # Find number of dimensions from dataset
             self.n_dims = get_n_dims(self.ds) - 1  # Subtract 1 for time.
         
         if title:
             self.ds.attrs['title'] = title
-        # elif group: 
-        #     self.ds.attrs['title'] = group.stem.strip('_ ') + group.name if group.name not in group.stem else group.stem.strip('_ ')
         elif 'title' not in self.ds.attrs:
             raise AttributeError(
                 "MoncDs: dataset title is missing."
@@ -181,11 +159,6 @@ class MoncDs:
                 f"cfize running on MONC dataset {self.ds.attrs['title']} with "
                 f"{self.n_dims} spatial dimensions."
             )
-            # print(
-            #     f"Process {os.getpid()}: cfize running on MONC dataset "
-            #     f"{self.ds.attrs['title']} with {self.n_dims} spatial "
-            #     f"dimensions."
-            # )
 
         # Pull required options_database info into dictionary
         self.get_options(
@@ -218,10 +191,6 @@ class MoncDs:
                 f"         Process {os.getpid()}: MoncDs.cfize took "
                 f"{perf_counter() - start_time} seconds."
             )
-            # print(
-            #     f"Process {os.getpid()}: MoncDs.cfize took "
-            #     f"{perf_counter() - start_time} seconds."
-            # )
 
         # Return processed dataset
         return self.ds
@@ -361,14 +330,6 @@ class MoncDs:
                     elif self.ds[var].attrs['units'].lower() == 'fraction':
                         self.ds[var].attrs['units'] = '1'
                     else:
-                        # pass
-                        # print(
-                        #     f"{self.ds[var].attrs['units']}: invalid units for "
-                        #     f"variable {var} in dataset "
-                        #     f"with title {self.ds.attrs['title']}, and no "
-                        #     f"new units specified in vocabulary under "
-                        #     f"dimension {self.n_dims}."
-                        # )
                         raise VocabError(
                             f"update_units: {self.ds[var].attrs['units']}: "
                             f"invalid units for variable {var} in dataset "
@@ -377,11 +338,6 @@ class MoncDs:
                             f"dimension {self.n_dims}."
                         )
             else:
-                # print(
-                #     f"No units specified for {var} in vocabulary "
-                #     f"({self.n_dims}d), and no existing units found."
-                # )
-                # return
                 raise VocabError(
                     f"update_units: CF conventions require that units be "
                     f"specified for each variable. No units specified in "
@@ -455,10 +411,6 @@ class MoncDs:
                                 f"update_units: assumed axis "
                                 f"{var[0].upper()} for variable {var}."
                             )
-                            # print(
-                            #     f"MoncDs.update_units: assumed axis "
-                            #     f"{var[0].upper()} for variable {var}."
-                            # )
                         self.ds[var].attrs['axis'] = var[0].upper()
                     elif 'axis' not in self.ds[var].attrs:
                         # Prompt user if required.
@@ -501,11 +453,6 @@ class MoncDs:
                 f"cfizing variables on MONC dataset {self.ds.attrs['title']} "
                 f"with {self.n_dims} spatial dimensions."
             )
-            # print(
-            #     f"Process {os.getpid()}: cfizing variables on MONC dataset "
-            #     f"{self.ds.attrs['title']} with {self.n_dims} spatial "
-            #     f"dimensions."
-            # )
         
         # Process any coordinate variables first, as changes in these may affect
         # processing of data variables.
@@ -526,10 +473,6 @@ class MoncDs:
             try:
                 updates = shared['vocabulary'][self.n_dims][var]
             except KeyError:
-                # print(
-                #     f"cfize_variables: {var} not found in vocabulary "
-                #     f"(dimension {self.n_dims})."
-                # )
                 raise VocabError(
                     f"cfize_variables: {var} not found in vocabulary "
                     f"(dimension {self.n_dims})."
@@ -572,10 +515,6 @@ class MoncDs:
 
             # check at least one present
             if 'standard_name' not in self.ds[var].attrs and 'long_name' not in self.ds[var].attrs:
-                # self.warnings.append(VocabError(
-                #     f"{var}: CF requires at least one of standard_name and "
-                #     f"long_name to be assigned to each variable."
-                # ))
                 raise VocabError(
                     f"cfize_variables: {var}: CF requires at least one of "
                     f"standard_name and long_name to be assigned to each "
@@ -591,7 +530,7 @@ class MoncDs:
             if 'updated_name' in updates:
                 self.ds = self.ds.rename({var: updates['updated_name']})
                 '''
-                TODO: If updated variable is the time variable, need to pass 
+                If updated variable is the time variable, need to pass 
                 back updated name, or probe for this change after return.
                 '''
                 if var == self.time_var:
@@ -616,10 +555,6 @@ class MoncDs:
                 # Adding two xarray.DataArrays doesn't preserve attributes,
                 # so need to create new data array combining new data with
                 # existing attributes.
-                # print("Trying to build new data array from sum of perturbation & reference.")
-                # print("absolute:", absolute)
-                # print(absolute.data)
-                # print("existing:", self.ds[var])
                 self.ds[var] = xr.DataArray(
                     data=absolute.data,
                     coords=self.ds[var].coords,
@@ -629,12 +564,10 @@ class MoncDs:
                 )
 
     def add_cf_attrs(self, shared: dict, **kwargs):
-            # TODO: <version> and <url> and any other required data will be assigned during packaging.
-
             defaults = {}  # {attr: None for attr in CF_ATTRIBUTES}
             
-            # TODO: history attribute should be an audit trail, and so include 
-            # whatever processing is done to each file, and ideally updated just
+            # History attribute should be an audit trail, and so include 
+            # whatever processing is done to each file, and updated just
             # prior to saving NetCDF file.
             defaults['history'] = f'{datetime.now().isoformat(timespec="minutes", sep=" ")}: MONC output files converted by CFizer version {VERSION}, https://github.com/cemac/CFizer.'
             defaults['Conventions'] = f"CF-{CF_VERSION}"
@@ -647,10 +580,6 @@ class MoncDs:
                 elif (attr in shared['CONFIG'] and shared['CONFIG'][attr]) or (attr in defaults and defaults[attr]):
                     self.ds.attrs[attr] = shared['CONFIG'][attr] if attr in shared['CONFIG'] else defaults[attr]
                 else:
-                    # print(
-                    #     f"{attr} must be included as a global attribute, "
-                    #     f"specified in config.yml."
-                    # )
                     self.warnings.append(ConfigWarning(
                         f"add_cf_attrs: CF-1.10, section 2.6.2, recommends {attr} be included as a global attribute. This can be specified in config.yml."
                     ))

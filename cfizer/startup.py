@@ -58,34 +58,14 @@ import os
 import yaml
 from importlib.resources import files
 from cfizer import *  # If init takes care of once-only declarations, this module allows them to be imported en masse to other routines, without their being rerun, I think.
-# from utils import vocab_from_xls
-
-# app_dir = os.path.dirname(__file__)
 
 
 def initialise() -> dict:
     global g, split_attrs
 
-    # app_dir = os.getcwd()
-
-    # root_dir = os.path.dirname(os.path.dirname(__file__))
-    # if 'dev' not in app_dir:
-    #     if 'test_data' not in app_dir:
-    #         app_dir = os.path.join(app_dir, 'dev')
-    #     else:
-    #         app_dir = os.path.join(root_dir, 'dev')
-    # print(f"Application directory: {os.path.dirname(__file__)}")
-    # print(f"Root directory: {root_dir}")
-    # print(f"Excel to YAML tool: {os.path.join(os.path.dirname(__file__), 'utilities/vocab_from_xlsx.py')} - exists: {os.path.exists(os.path.join(os.path.dirname(__file__), 'utilities/vocab_from_xlsx.py'))}")
-
     try:
-        # config_file = open(os.path.join(app_dir, "config.yml"))
         config_file = files('cfizer').joinpath('config.yml').open()
-        # config_file = open(os.path.join(root_dir, "config.yml"))
     except:
-        # raise OSError(
-        #     f"config.yml not found in base directory, {app_dir}"
-        # )
         raise OSError(
             f"config.yml not found: {files('cfizer').joinpath('config.yml')}"
         )
@@ -130,16 +110,8 @@ def initialise() -> dict:
                 for k, v in g['CONFIG']['group_attributes'].items()}
 
     try:
-        # vocab_file = open(os.path.join(app_dir, "vocabulary.yml"))
-        # vocab_file = open(os.path.join(root_dir, "vocabulary.yml"))
         vocab_file = files('cfizer').joinpath('vocabulary.yml').open()
     except:
-        # exit(
-        #     f"Vocabulary file ({os.path.join(app_dir, 'vocabulary.yml')}) not "
-        #     f"found. To derive from Excel spreadsheet, run the following "
-        #     f"command from the application directory:"
-        #     f"{os.path.join(app_dir, 'vocab_from_xlsx.py')}"
-        # )
         exit(
             f"Vocabulary file ({files('cfizer').joinpath('vocabulary.yml')}) not "
             f"found. To derive from Excel spreadsheet, run the following "
@@ -148,7 +120,6 @@ def initialise() -> dict:
         )
     g['vocabulary'] = yaml.safe_load(vocab_file)
     vocab_file.close()
-    # print(f"Vocabulary loaded from {os.path.join(app_dir, 'vocabulary.yml')}.")
     print(f"Vocabulary loaded from {files('cfizer').joinpath('vocabulary.yml')}.")
     g['reference_vars'] = {}
 
@@ -163,7 +134,6 @@ def initialise() -> dict:
             to_drop = []
             for k, v in attributes.items():
                 if k not in VOCAB_FIELDS:
-                    # print(f'WARNING: {os.path.join(app_dir, "vocabulary.yml")} contains invalid field: {k}')
                     print(f'WARNING: vocabulary.yml contains invalid field: {k}')
                     to_drop.append(k)
                     continue

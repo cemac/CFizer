@@ -9,13 +9,8 @@ import argparse
 from cfunits import Units
 import sys
 from importlib.resources import files
-# # Workaround to find package directory (https://stackoverflow.com/a/61571300)
-# if os.getcwd() not in sys.path:
-#     sys.path.append(os.getcwd())  # This shouldn't be necessary once packaged
-# # print(sys.path)
-# app_dir = os.path.dirname(__file__)
+# Locate config.yml, to define directory in which to place vocabulary.yml.
 vocab_dir = os.path.dirname(files('cfizer').joinpath('config.yml'))
-# sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from cfizer.startup import VOCAB_FIELDS
 
 
@@ -62,7 +57,6 @@ def vocab_from_xls(filepath: str) -> dict:
                 subset=int(row[0].value[0])
             else:  # Non-dimension heading
                 subset = row[0].value
-            # print(subset)
             vocabulary.update({subset: {}})
         else:  # variable
             if subset == 'all':
@@ -79,8 +73,6 @@ def vocab_from_xls(filepath: str) -> dict:
                     for field, index in header_row.items() 
                     if row[index].value is not None}
                 })
-                # print(row[0].value.split('(')[0].strip(), ':', 
-                #     vocabulary[subset][row[0].value.split('(')[0].strip()])
 
     empty = []
     for subset, var_set in vocabulary.items():
@@ -96,7 +88,6 @@ def vocab_from_xls(filepath: str) -> dict:
                                 vocabulary[subset][var]['dimension_changes']
                                 )
                     }
-                    # print(vocabulary[subset][var]['dimension_changes'])
             if 'long_name' in attrs:
                 vocabulary[subset][var]['long_name'] = vocabulary[subset][var]['long_name'].title()
     [vocabulary.pop(e) for e in empty]
@@ -116,7 +107,6 @@ def check_units(vocab: dict) -> dict:
 
 
 def vocab_to_yaml(vocab: dict) -> str:
-    # filepath = op.join(app_dir, 'vocabulary.yml')
     filepath = op.join(vocab_dir, 'vocabulary.yml')
     if op.exists(filepath):
         while True:
