@@ -25,6 +25,7 @@ classifiers = [
     "License ::  BSD-3-Clause license ",
     "Operating System :: OS Independent",
 ]
+license = {file = "LICENSE"}
 
 [tool.setuptools.packages.find]
 exclude = ["test*"]
