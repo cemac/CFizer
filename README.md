@@ -40,11 +40,11 @@ At the beginning of `config.yml` are the global attributes that [CF Conventions 
 - `conventions`:    Set automatically by CFizer.
 
 # Running
-To run this version, from this directory:
+To run the CFizer on a directory of MONC outputs:
 
 `cfize [options] <source_directory>`
 
-where `<source_directory>` is the path for the directory containing the MONC NC files to be processed.
+where `<source_directory>` is the path for the directory containing the NC files to be processed.
 
 ## Options
 Option | Argument | Function | Example
