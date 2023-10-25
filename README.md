@@ -1,5 +1,5 @@
 # CFizer
-Tools to make NetCDF files CF-compliant (Climate and Forecast metadata convention), initially working with MONC (Met Office NERC cloud model) output.
+CFizer is a tool to make NetCDF output files from MONC (Met Office NERC cloud model) CF-compliant (Climate and Forecast metadata convention). It is also able to merge and split datasets according to the number of spatial dimensions, and apply compression to a user-specified level.
 
 CEDA provides an [overview of the CF metadata convention](https://help.ceda.ac.uk/article/4507-the-cf-metadata-convention).
 
@@ -22,7 +22,7 @@ python -m venv /path/to/cfizer_env
 source /path/to/cfizer_env/bin/activate
 ```
 
-**Important**: Update the configuration file, `cfizer/config.yml` and, if necessary, the vocabulary (`cfizer/vocabulary.yml`), before installing CFizer (see **Setup** below). Installation creates a copy of these in the virtual environment, so any subsequent changes either need to be made to the version in that environment, or require re-installation.
+**Important**: *Before installing CFizer*, update the configuration file, `cfizer/config.yml` and, if necessary, the vocabulary (`cfizer/vocabulary.yml`) - see [[Setup]] below. Installation creates a copy of these in the virtual environment, so any subsequent changes either need to be made to the version in that environment, or require re-installation.
 
 Install CFizer:
 `pip install .`
@@ -30,7 +30,7 @@ Install CFizer:
 # Setup
 The most important setup for users is to check/complete the `cfizer/vocabulary.yml` and `cfizer/config.yml` files. They define, respectively, how the MONC variables are to be modified for CF compliance, and parameters that should be uniform across a set of files, including the source of the original data.
 
-[CF Conventions recommend](http://cfconventions.org/Data/cf-conventions/cf-conventions-1.10/cf-conventions.html#description-of-file-contents) the following global attributes be present in all datasets:
+At the beginning of `config.yml` are the global attributes that [CF Conventions recommend](http://cfconventions.org/Data/cf-conventions/cf-conventions-1.10/cf-conventions.html#description-of-file-contents) be present in all datasets:
 - `title`:          Set automatically by CFizer, based on file names and any merge/split operations.
 - `institution`:    This should be provided in `config.yml`. "Specifies where the original data was produced."
 - `source`:         Details of how the data were generated, e.g. MONC version ... To be provided in `config.yml`.
