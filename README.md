@@ -22,7 +22,7 @@ python -m venv /path/to/cfizer_env
 source /path/to/cfizer_env/bin/activate
 ```
 
-**Important**: *Before installing CFizer*, update the configuration file, `cfizer/config.yml` and, if necessary, the vocabulary (`cfizer/vocabulary.yml`) - see [[Setup]] below. Installation creates a copy of these in the virtual environment, so any subsequent changes either need to be made to the version in that environment, or require re-installation.
+**Important**: *Before installing CFizer*, update the configuration file, `cfizer/config.yml` and, if necessary, the vocabulary (`cfizer/vocabulary.yml`) - see [[#Setup]] below. Installation creates a copy of these in the virtual environment, so any subsequent changes either need to be made to the version in that environment, or require re-installation.
 
 Install CFizer:
 `pip install .`
