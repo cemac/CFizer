@@ -44,7 +44,7 @@ To run the CFizer on a directory of MONC outputs:
 
 `cfize [options] <source_directory>`
 
-where `<source_directory>` is the path for the directory containing the NC files to be processed.
+where `<source_directory>` is the path to the directory containing the NC files to be processed.
 
 ## Options
 Option | Argument | Function | Example
@@ -79,7 +79,6 @@ Because the vocabulary is organised by the number of spatial dimensions for a gi
 
 ## Usage
 
-From the root directory:
 `xlvocab <path_to_spreadsheet>`
 
 The new vocabulary YAML file will be created in the CFizer root directory.
