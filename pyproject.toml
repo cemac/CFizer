@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cfizer"
+version = "1.0.0"
+requires-python = ">=3.10"
+dependencies = [
+    "netcdf4>=1.5.7",
+    "xarray==2022.3.0",
+    "pyyaml==6.0",
+    "cfunits>=3.3.4",
+    "numpy>=1.22.3",
+    "dask",
+    "openpyxl>=3.0"
+]
+authors = [
+  { name="Cameron Wilson", email="C.J.Wilson1@leeds.ac.uk" }
+]
+description = "A tool to convert NetCDF output files from MONC into CF-compliant versions."
+readme = "README.md"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License ::  BSD-3-Clause license ",
+    "Operating System :: OS Independent",
+]
+
+[tool.setuptools.packages.find]
+exclude = ["test*"]
+
+[tool.setuptools.package-data]
+cfizer = ["vocabulary.yml", "config.yml"]
+
+[project.urls]
+"Homepage" = "https://github.com/cemac/CFizer"
+
+[project.scripts]
+cfize = "cfizer.cfize:cfize"
+xlvocab = "cfizer.utilities.vocab_from_xlsx:xlsx_to_yml"

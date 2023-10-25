@@ -1,0 +1,134 @@
+institution: University of Leeds
+source: Leeds MONC version x
+references: None
+comment: None
+reference_time: 'input_file'  # ISO format or 'input_file', to look for it in an input file, if found; this can also be specified via command line.
+time_units: seconds  # Base unit, or full in format 's since 2019-05-14 00:00+00:00'
+compression:  # Compression for NetCDF4 output files. See https://unidata.github.io/netcdf4-python/efficient-compression-of-netcdf-variables
+  'on': True  # True/False
+  'type': zlib  # compression type
+  'level': 2  # 1-9, with 1 being lowest level (fastest).
+dimension_groups:
+  0: '0+1d'
+  1: '0+1d'
+  2: '2d'
+  3: '3d'
+group_actions:
+  '0+1d': merge
+  '2d': merge
+  '3d': split
+monc_id_attribute: 'MONC timestep'  # Used to confirm a dataset is MONC output
+options_database:
+  variable: options_database
+  dimensions:
+  - 'number_options'
+  - 'kvp'
+  - 'string'
+chunking:  # Applies to 2+ dimension datasets only. Dimension: chunk size.
+  z: 2
+  zn: 2
+# Ideally chunk sizes should be power of 2.
+global_to_variable:  # Global attributes to be converted to variables
+  MONC timestep:
+    units: s
+    long_name: MONC timestep
+# Global attributes and their Numpy data types (with numpy. prefix)
+do_not_propagate:  # Convert to variables, but only assign values that are known
+  'MONC timestep': 'numpy.int32'
+# Global attributes to be assigned appropriate values in each new dataset, when an existing dataset is split. Provide attribute name as key, with the value being a list: the first element is a tuple comprising the variable to use for the value in the first dataset, and the variable to use for all other datasets; the 2nd element is the numpy data type. Ensure any references to variables reflect any updated_name in the vocabulary (e.g. use time instead of time_series_300_1800)
+attributes_to_split:
+    'MONC time':
+      - [time, time]
+      - 'numpy.float64'
+    'Previous diagnostic write at': 
+      - ['Previous diagnostic write at', 'time']
+      - 'numpy.float64'
+# Attributes for which to assign a single value per group. Key: value pairs, with values being data types. If not built in, specify numpy (e.g. numpy.int32).
+group_attributes:
+  created: 'datetime.datetime'
+new_coordinate_variables:
+  x:
+    spacing: dxx
+    position: centre
+    attributes:
+      axis: X
+      units: m
+      long_name: x-coordinate in Cartesian system (cell-centers)
+  y:
+    spacing: dyy
+    position: centre
+    attributes:
+      axis: Y
+      units: m
+      long_name: y-coordinate in Cartesian system (cell-centers)
+  xu:
+    spacing: dxx
+    position: edge
+    attributes:
+      axis: X
+      units: m
+      long_name: x-coordinate in Cartesian system (cell-edges)
+  yv:
+    spacing: dyy
+    position: edge
+    attributes:
+      axis: Y
+      units: m
+      long_name: y-coordinate in Cartesian system (cell-edges)
+dephy_true_if:
+  dephy_file: True
+drop_for_dephy:
+  - "longitude"
+  - "latitude"
+  - "z0"
+options_to_attrs:
+  - "smagorinsky_enabled"
+  - "damping_enabled"
+  - "socrates_couple_enabled"
+  - "casim_enabled"
+  - "galilean_transformation"
+  - "time_basis"
+  - "use_anelastic_equations"
+  - "coriolis_enabled"
+  - "diffusion_enabled"
+  - "use_viscosity_and_diffusion"
+  - "dxx"
+  - "dyy"
+  - "z_size"
+  - "zztop"
+  - "dtm"
+  - "cfl_cvismax"
+  - "cfl_cvelmax"
+  - "cfl_dtmmin"
+  - "cfl_dtmmax"
+  - "surface_pressure"
+  - "surface_reference_pressure"
+  - "zdmp"
+  - "hdmp"
+  - "thref0"
+  - "l_matchthref"
+  - "smag-subc"
+  - "smag-subb"
+  - "rmlmax"
+  - "advection_flow_fields"
+  - "advection_theta_field"
+  - "advection_q_fields"
+  - "l_warm"
+  - "number_q_fields"
+  - "option"
+  - "max_height_cloud"
+  - "fixed_cloud_number"
+  - "aerosol_option"
+  - "rad_start_year"
+  - "rad_start_day"
+  - "rad_start_time"
+  - "l_use_ndrop"
+  - "l_fix_re"
+  - "mcc_temperature_profile"
+  - "mcc_vapour_profile"
+  - "mcc_ozone_profile"
+  - "dephy_forcings_enabled"
+  - "dephy_file"
+  - "lat"
+  - "lon"
+  - "z0"
