@@ -1099,7 +1099,7 @@ def cfize():
     # Validate supplied directory to parse.
     if g['verbose']:
         print(f"Application launched from {os.getcwd()}")
-        print(f"Source directory: {args.source_dir}; absolute path: {op.abspath(args.source_dir)}")
+        print(f"Source directory: {args.source_dir}\nAbsolute path: {op.abspath(args.source_dir)}")
     
     if not op.exists(args.source_dir):
         sys.exit(OSError(f'Source directory {op.abspath(args.source_dir)} not found.'))
