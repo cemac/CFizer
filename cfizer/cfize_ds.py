@@ -7,7 +7,7 @@ from dask.delayed import Delayed
 from time import perf_counter, strftime, localtime
 from datetime import datetime
 import numpy as np
-
+from typing import Union
 
 def get_n_dims(dataset: xr.Dataset) -> int:
     if not g:
@@ -444,7 +444,7 @@ class MoncDs:
             self.ds[var].attrs['units'] = format_units(new_units)
 
     def cfize_variables(self, 
-                        variables: list|set|tuple,
+                        variables: Union[list, set, tuple],
                         shared: dict):
         
         if shared['verbose']: 

@@ -1,8 +1,8 @@
 from cfunits import Units
 import re
+from typing import Union
 
-
-def format_units(units: Units|str) -> str:
+def format_units(units: Union[Units, str]) -> str:
     '''
     cfunits.Units.formatted() reorders component units weirdly.
     This formatter preserves the original ordering, but makes units look more
