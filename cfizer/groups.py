@@ -10,7 +10,7 @@ from cfizer.cfize_ds import MoncDs
 from cfizer.utils import type_from_str #, performance_time
 from time import perf_counter, strftime, localtime
 from datetime import datetime
-
+from typing import Union
 
 def stem_str(*args: str):
     '''
@@ -35,7 +35,7 @@ def stem_str(*args: str):
     return stem
 
 
-def get_time_var(*args: int|xr.Dataset) -> str:
+def get_time_var(*args: Union[int, xr.Dataset]) -> str:
     '''
     
     '''
@@ -79,7 +79,7 @@ def get_time_var(*args: int|xr.Dataset) -> str:
     return time_vars[0]
 
 
-def ds_feed(file_list: list|set|tuple|str):
+def ds_feed(file_list: Union[list, set, tuple, str]):
     '''
     This generator replaces the DsGroup.datasets generator, because generators 
     can't be passed (as a "pickle") to a new Process as an attribute, method or 
@@ -91,7 +91,7 @@ def ds_feed(file_list: list|set|tuple|str):
     return (xr.open_dataset(path, decode_times=False) for path in file_list)
     
 
-def ds_list(file_list: list|set|tuple|str):
+def ds_list(file_list: Union[list, set, tuple, str]):
     # ENHANCEMENT: test that all paths supplied are valid & are NC files.
     if isinstance(file_list, str):
         file_list = [file_list]
@@ -138,7 +138,7 @@ def merge_dimensions(*args) -> xr.Dataset:
 
 def globals_to_vars(ds: xr.Dataset, 
                     time_var: str, 
-                    last_time_point: int|float,
+                    last_time_point: Union[int, float],
                     shared: dict) -> xr.Dataset:
     
     vars = {}
@@ -185,8 +185,8 @@ class DsGroup:
                  n_dims: int = None,
                  time_variable: str = '',
                  action: str = None, 
-                 filepaths: list|set|tuple = None,
-                 groups: list|set|tuple = None) -> None:
+                 filepaths: Union[list, set, tuple] = None,
+                 groups: Union[list, set, tuple] = None) -> None:
         '''
         n_dims: Number of *spatial* dimensions (X, Y, Z), ignoring variations 
                 such as z & zn.

@@ -1,7 +1,7 @@
 import numpy as np
 import sys
 import xarray
-
+from typing import Union
 
 def str_to_class(module: str, class_name: str):
     '''
@@ -63,7 +63,7 @@ def type_from_str(string: str):
 
 
 def generate_coords(number: int, 
-                    spacing: float|int, 
+                    spacing: Union[float, int], 
                     midpoint: bool = False,
                     data_type: np.dtype = np.float64) -> np.ndarray:
     first = 0.5 if midpoint else 0

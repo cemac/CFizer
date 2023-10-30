@@ -906,7 +906,6 @@ def sort_nc(directory, shared: dict) -> [dict, list]:
 
     # For each NC file in source directory (recursive parsing or not?):
     for filepath in iglob(f'{op.join(directory, "*.nc")}', 
-                          root_dir=os.pathsep, 
                           recursive=False):
         with xr.open_dataset(filepath, 
                              decode_times=False) as ds:  
