@@ -86,6 +86,8 @@ The new vocabulary YAML file will be created in the CFizer root directory.
 # Version History
 
 1.0.0  Initial release.
+
 1.0.1  Allows backwards compatibility with Python 3.9, by removing `root_dir` option from `iglob` function calls.
+
 1.0.2  Code reformatting using *Black*, for consistency, and added maintainer to pyproject.toml.
 
