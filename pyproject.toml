@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cfizer"
-version = "1.0.1"
+version = "1.0.2"
 requires-python = ">=3.9"
 dependencies = [
     "netcdf4>=1.5.7",
@@ -17,6 +17,9 @@ dependencies = [
 ]
 authors = [
   { name="Cameron Wilson", email="C.J.Wilson1@leeds.ac.uk" }
+]
+maintainers = [
+  { name="Steven Boeing", email="S.Boeing@leeds.ac.uk" }
 ]
 description = "A tool to convert NetCDF output files from MONC into CF-compliant versions."
 readme = "README.md"
