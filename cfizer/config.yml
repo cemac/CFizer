@@ -129,6 +129,6 @@ options_to_attrs:
   - "mcc_ozone_profile"
   - "dephy_forcings_enabled"
   - "dephy_file"
-  - "lat"
-  - "lon"
+  - "latitude"
+  - "longitude"
   - "z0"
