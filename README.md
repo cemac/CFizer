@@ -77,11 +77,11 @@ Any additional columns will be ignored.
 
 Because the vocabulary is organised by the number of spatial dimensions for a given variable (and output file), the spreadsheet should likewise be divided by dimensions. Before each set of variables should be a row containing only a dimensionality indicator in the first cell, e.g. `0D` for files/variables with only a time dimension and `3D` for file/variables with 3 spatial dimensions as well as time.
 
-## Usage
+### Usage
 
 `xlvocab <path_to_spreadsheet>`
 
-The new vocabulary YAML file will be created in the CFizer root directory.
+The new vocabulary YAML file will be created in the CFizer source code directory.
 
 # Version History
 
