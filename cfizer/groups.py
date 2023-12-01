@@ -422,8 +422,6 @@ class DsGroup:
         if shared["verbose"]:
             start_time = perf_counter()
 
-        # from cfize_ds import cfize_dataset  # To avoid circular imports
-        # global vocabulary
         if shared["verbose"]:
             log.append(
                 f"{strftime('%H:%M:%S', localtime())} "
@@ -434,33 +432,16 @@ class DsGroup:
                     [op.basename(path) for path in self.filepaths]
                 )
             )
-            # print(
-            #     f"Process {os.getpid()}: Merging time series in group {self.n_dims}:{self.name}, containing datasets {[op.basename(path) for path in self.filepaths]}."
-            #     )
-
+        
         hold_attrs = {}  # Global attributes to be set once for merged group.
-        # time_var = {}
-
+        
         processing = (
             self.get_datasets()
         )  # list(self.datasets())  # Open all datasets in group.
         for i, ds in enumerate(processing):
-            # Find dataset's time coordinate variable
-            # time_var[i] = variable_glob(ds=ds, var_glob=self.time_var)
-            # if len(time_var[i]) != 1:
-            #     # TODO: disambiguation
-            #     raise AttributeError(
-            #         'Multiple variables found in dataset that match time '
-            #         f'variable pattern, {self.time_var}.')
-            # else:
-            #     time_var[i] = time_var[i][0]
-
             # Assign any required global attributes to variables,
             # with associated attributes. Remove global attribute.
-            """
-            Assume these are only correct for last time-point in series.
-            """
-
+            # Assume these are only correct for last time-point in series.
             last_time_point = ds[self.time_var].data[-1]  # time_var[i]
             try:
                 new_vars = globals_to_vars(
@@ -546,7 +527,6 @@ class DsGroup:
         self.to_process.attrs.update(hold_attrs)
 
         # Derive title/filename from group's stem & dimension
-        # merged.attrs.update({'title': self.stem.strip('_ ') + self.n_dims if f'{self.n_dims}d' not in self.stem else self.stem.strip('_ ')})
         self.to_process.attrs["title"] = (
             self.stem.strip("_ ") + str(self.n_dims)
             if f"{self.n_dims}d" not in self.stem
@@ -558,10 +538,7 @@ class DsGroup:
                 f"         Process {os.getpid()}: DsGroup.merge_times took "
                 f"{perf_counter() - start_time} seconds."
             )
-            # print(
-            #     f"Process {os.getpid()}: DsGroup.merge_times took "
-            #     f"{perf_counter() - start_time} seconds."
-            # )
+            
         return {"merged": self.to_process, "log": log}
 
     def merge_groups(self, shared: dict) -> tuple[list[str], list[str]]:
@@ -582,16 +559,8 @@ class DsGroup:
                     [op.basename(path) for path in self.filepaths]
                 )
             )
-            # print(
-            #     f"Process {os.getpid()}: merging groups - {self.name} with "
-            #     f"{self.n_dims} dimensions, containing "
-            #     f"{[op.basename(path) for path in self.filepaths]}."
-            # )
 
         if self.action != "merge_groups":
-            # print(
-            #     'merge_groups is not valid if group.action != "merge_groups".'
-            # )
             return (
                 self.to_process,
                 log + ['merge_groups is not valid if group.action != "merge_groups".'],
@@ -601,7 +570,7 @@ class DsGroup:
 
         self.to_process = self.get_datasets()
 
-        for i, ds in enumerate(self.to_process):
+        for ds in self.to_process:
             # Store largest value per group of any 'one per group' global
             # attributes, as value to assign to merged dataset.
             for attr, attr_type in shared["group_attrs"].items():
