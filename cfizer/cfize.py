@@ -640,7 +640,7 @@ def process_parallel(groups: dict, n_proc: int, shared: dict):
 def cfize_all_datasets(group: DsGroup, shared: dict) -> list:
     """
     Should print & return names of saved files
-    TODO: This function still to be written tested.
+    TODO: This function still to be written and tested.
     """
 
     update_globals = {}
@@ -756,12 +756,14 @@ def process_serial(groups: dict, shared: dict):
             )
 
             group.processed = []
-            [
-                process_large(
-                    filepath=filepath, group=group, title=title, shared=shared
-                )
-                for filepath in group.filepaths
-            ]
+            # TODO: Check that the following has been superseded by the loop
+            # immediately after it.
+            # [
+            #     process_large(
+            #         filepath=filepath, group=group, title=title, shared=shared
+            #     )
+            #     for filepath in group.filepaths
+            # ]
             for filepath in group.filepaths:
                 r = process_large(
                     filepath=filepath, group=group, title=title, shared=shared
