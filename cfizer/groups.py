@@ -198,8 +198,7 @@ class DsGroup:
                 such as z & zn.
         """
         self.log = []
-        # global vocabulary, reference_vars
-
+        
         # If groups parameter contains existing DsGroup objects:
         if groups and all([isinstance(g, DsGroup) for g in groups]):
             # check each DsGroup has only one dataset in its processed
@@ -234,9 +233,6 @@ class DsGroup:
                             [op.basename(path) for path in self.filepaths]
                         )
                     )
-                    # print(
-                    #     f"Process {os.getpid()}: DsGroup: opening datasets {[op.basename(path) for path in self.filepaths]}."
-                    # )
                 self.to_process = [
                     xr.open_dataset(path, decode_times=False) for path in self.filepaths
                 ]  # Dataset objects
@@ -260,11 +256,12 @@ class DsGroup:
             # name.
             self.name = self.stem.strip(" _") + "_" + self.name
 
-            # Check & identify common time variable.
+            # Derive the number of dimensions from those of the groups being combined.
             self.n_dims = sum(
                 [g.n_dims for g in groups]
             )  # TODO: This is a little dubious, given there's no guarantee dimension groups don't overlap, but works for MONC outputs where 0d & 1d are grouped.
 
+            # Check & identify common time variable
             self.time_var = time_variable or groups[0].time_var
             # Check all datasets to be merged have matching time coordinates.
             if not all([g.time_var == self.time_var for g in groups]):
@@ -275,14 +272,8 @@ class DsGroup:
                     f"found mismatch in time variables: "
                     f"{[g.time_var for g in groups]}."
                 )
-                # print(
-                #     f'DsGroup: When attempting to combine groups, '
-                #     f'found mismatch in time variables: '
-                #     f'{[g.time_var for g in groups]}.'
-                # )
                 self.action = None
-                # raise ValueError('DsGroup: When attempting to combine groups, '
-                #                  'found mismatch in time variables.')
+                # raise ValueError('DsGroup: When attempting to combine groups, found mismatch in time variables.')
             else:
                 self.action = action.lower() if action else "merge_groups"
             self.processed = None  # Filepath(s) of output
@@ -333,9 +324,6 @@ class DsGroup:
                                 exit("No time coordinate variable specified/found.")
                             self.time_var = list(ds.dims)[t - 1]
 
-                        # self.time_var = None    # Search in datasets as files
-                        # are added.
-
                     # TODO: verify all datasets in group have same time
                     # variable & time points.
                     # if all([tv==time_var[0] for tv in time_var.values()]):
@@ -363,8 +351,6 @@ class DsGroup:
                 f"available."
             )
 
-        # global vocabulary  # Allow time variable names to be updated
-
         if not op.exists(filepath):
             raise OSError(f"DsGroup.add: Filepath {filepath} not found.")
 
@@ -377,8 +363,6 @@ class DsGroup:
 
         # Update name stem common to all files in group.
         self.stem = stem_str(self.stem, filepath)
-
-        # print(f"Added {op.basename(filepath)} to {self.name}; stem: {self.stem}")
 
         # If don't have a time variable yet, attempt to find in new file.
         if not self.time_var:
@@ -421,10 +405,15 @@ class DsGroup:
             g["vocabulary"][self.n_dims].pop(self.time_var)
             self.time_var = exact_time_var
         else:
-            # TODO: confirm time variable in new dataset matches self.time_var
-            pass
+            # Confirm time variable in new dataset matches self.time_var
+            ds_time_var = get_time_var(
+                xr.open_dataset(filepath, decode_times=False)
+            )
+            if self.time_var != ds_time_var:
+                raise AttributeError(
+                    f"Time variable {ds_time_var} in dataset {filepath} does not match {self.time_var} specified in vocabulary."
+                )
 
-    # @performance_time
     def merge_times(self, shared: dict) -> dict[xr.Dataset, list[str]]:
         """
         Should print & return name of saved file(s)
