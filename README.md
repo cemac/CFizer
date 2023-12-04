@@ -70,7 +70,9 @@ Option | Argument | Function | Example
 #SBATCH --time=60
 #SBATCH --mem-per-cpu=16384
 
-module add jaspy/3.10/r20230718
+# module add jaspy/3.10/r20230718  # If not already running
+# conda activate cfizer  # If not already active
+
 srun cfize -p 4 -v -i -t <target_directory> <directory_to_process>
 ```
 
