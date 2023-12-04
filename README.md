@@ -57,6 +57,23 @@ Option | Argument | Function | Example
 `--verbose`, `-v`||Set to report all progress and function timings to stdout.|
 `--quiet`, `-q`||Set to suppress any warnings normally printed to stdout upon completion.|
 
+## Example Slurm Submission Script (JASMIN)
+```bash
+#!/bin/bash
+#SBATCH --partition=test
+#SBATCH -n 1
+#SBATCH -c 4
+#SBATCH -N 1
+#SBATCH --job-name=cfizer_example
+#SBATCH -o <run_directory>/%j.out
+#SBATCH -e <run_directory>/%j.err
+#SBATCH --time=60
+#SBATCH --mem-per-cpu=16384
+
+module add jaspy/3.10/r20230718
+srun cfize -p 4 -v -i -t <target_directory> <directory_to_process>
+```
+
 ## Creating Vocabulary File from Excel Spreadsheet
 
 The `vocab_from_xlsx` tool creates the required `vocabulary.yml` file from a Microsoft Excel spreadsheet, providing it is in the expected format:
