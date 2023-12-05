@@ -73,7 +73,7 @@ Option | Argument | Function | Example
 # module add jaspy/3.10/r20230718  # If not already running
 # conda activate cfizer  # If not already active
 
-srun cfize -p 4 -v -i -t <target_directory> <directory_to_process>
+srun cfize -p 4 -v -i -t <output_directory> <directory_to_process>
 ```
 
 ## Creating Vocabulary File from Excel Spreadsheet
