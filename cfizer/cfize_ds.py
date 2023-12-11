@@ -65,6 +65,7 @@ def split_ds(
                 f"Created new dataset with "
                 f"title, {grouped[point].attrs['title']}"
             )
+    # Prepare list of new datasets to return.
     split = list(grouped.values())
     log.append(
         f"         Process {os.getpid()}: split_ds took "
@@ -78,8 +79,16 @@ def ds_to_nc(
     filepath: str,
     encodings: dict = None,
     compress: bool = False,
-    shared: dict = None,
 ) -> None:
+    """
+    Wrapper for xarray.Dataset.to_netcdf. This is a legacy of pre-parallel 
+    version of CFizer, where functions such as this could be wrapped in a
+    performance timer. Retaining for now, to automatically add extra options for
+    compression only when required.
+    This function is not currently used, but performs about equally to dask 
+    version, as it is the preparation of data rather than the writing itself 
+    that is the most time-consuming.
+    """
     if compress:
         ds.to_netcdf(
             path=filepath,
@@ -96,8 +105,15 @@ def ds_to_nc_dask(
     filepath: str,
     encodings: dict = None,
     compress: bool = False,
-    shared: dict = None,
 ) -> Delayed:
+    """
+    Wrapper for xarray.Dataset.to_netcdf. This is a legacy of pre-parallel 
+    version of CFizer, where functions such as this could be wrapped in a
+    performance timer. Retaining for now, to automatically add extra options for
+    compression only when required.
+    Prepares dataset for writing to NetCDF, in this case, creating a Dask
+    delayed object, which can then be written when it is efficient to do so.
+    """
     if compress:
         return ds.to_netcdf(
             path=filepath,
@@ -108,10 +124,6 @@ def ds_to_nc_dask(
         )
     else:
         return ds.to_netcdf(path=filepath, encoding=encodings, compute=False)
-
-
-def perform_write(writer: Delayed, shared: dict = None) -> None:
-    writer.compute()
 
 
 class MoncDs:

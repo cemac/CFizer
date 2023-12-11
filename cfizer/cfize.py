@@ -131,6 +131,9 @@ def process_large(filepath: str, group: DsGroup, title: str, shared: dict) -> st
         if len(processed) > 1:
             for attr, (func, attr_type) in split_attrs.items():
                 if attr in ds.attrs:
+                    # attr_type is the required type-casting function.
+                    # func selects an appropriate value for the new global
+                    # attribute, based on its position in the series.
                     ds.attrs[attr] = attr_type(func(i, processed))
                 else:
                     errors.append(
@@ -143,7 +146,8 @@ def process_large(filepath: str, group: DsGroup, title: str, shared: dict) -> st
                     return {"warnings": warnings, "errors": errors, "log": log}
 
         # Ensure all attributes comply with CF recommendation to use only
-        # alphanumeric and underscore characters.
+        # alphanumeric and underscore characters. Could run replace on all attrs
+        # but assuming it may be faster to check then run only where needed.
         replace_attr = {attr for attr in ds.attrs if " " in attr or "-" in attr}
         for attr in replace_attr:
             ds.attrs[attr.replace(" ", "_").replace("-", "_")] = ds.attrs.pop(attr)
@@ -157,7 +161,7 @@ def process_large(filepath: str, group: DsGroup, title: str, shared: dict) -> st
 
         # set filepath
         filepath = op.join(target_dir, f"{ds.attrs['title']}.nc")
-        # set encodings
+        # set encodings for NetCDF writing.
         encodings = (
             {
                 k: {
@@ -177,28 +181,25 @@ def process_large(filepath: str, group: DsGroup, title: str, shared: dict) -> st
             }
         )
 
-        # Export to NetCDF (set as single-command function,
-        # so can wrap in performance_time).
-        # Testing dask version
+        # Export to NetCDF.
         if shared["verbose"]:
             log.append(
                 f"{strftime('%H:%M:%S', localtime())} Process {os.getpid()}: "
                 f"preparing delayed writer for {filepath}."
             )
-            # print(
-            #     f"Process {os.getpid()}: preparing delayed writer for "
-            #     f"{filepath}."
-            # )
+        # Dask version, for delayed writing.
         try:
             if shared["verbose"]:
                 w_start = perf_counter()
+                # TODO: Because performance timing for parallelised functions 
+                # now happens in the calling function, there is no need to have
+                # a wrapper function for xarray.Dataset.to_netcdf.
             writers.append(
                 ds_to_nc_dask(
                     ds=ds,
                     filepath=filepath,
                     encodings=encodings,
                     compress=shared["CONFIG"]["compression"]["on"],
-                    shared=shared,
                 )
             )
             if shared["verbose"]:
@@ -217,13 +218,14 @@ def process_large(filepath: str, group: DsGroup, title: str, shared: dict) -> st
             f"{strftime('%H:%M:%S', localtime())} Process {os.getpid()}: "
             f"Computing writes."
         )
-        # print(f"Process {os.getpid()}: Computing writes.")
+
+    # Perform file writing once all NetCDF-formatted datasets are prepared 
+    # as Dask.delayed objects.
     try:
-        [perform_write(writer, shared=shared) for writer in writers]
         for writer in writers:
             if shared["verbose"]:
                 w_start = perf_counter()
-            perform_write(writer, shared=shared)
+            writer.compute()
             if shared["verbose"]:
                 log.append(
                     f"         Process {os.getpid()}: perform_write took "
@@ -240,10 +242,6 @@ def process_large(filepath: str, group: DsGroup, title: str, shared: dict) -> st
             f"         Process {os.getpid()}: process_large took "
             f"{perf_counter() - start_time} seconds."
         )
-        # print(
-        #     f"Process {os.getpid()}: process_large took "
-        #     f"{perf_counter() - start_time} seconds."
-        # )
 
     return {
         "update_group": {"processed": group.processed, "time_var": group.time_var},
