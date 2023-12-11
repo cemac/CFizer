@@ -13,14 +13,12 @@ from glob import iglob
 from datetime import datetime, timezone
 import typing
 
-# from utils import type_from_str, tf, performance_time
-# from dask.diagnostics import ProgressBar
 from time import perf_counter, localtime, strftime
 import argparse
 from multiprocessing import (
     Process,
     Pool,
-)  # , set_start_method  # multiprocess not available in Jaspy environment.
+)  # , set_start_method
 from cfizer.cfize_ds import *
 from cfizer.units import TimeUnits
 from cfizer.groups import DsGroup, globals_to_vars
@@ -41,15 +39,8 @@ def process_large(filepath: str, group: DsGroup, title: str, shared: dict) -> st
         {}
     )  # This is not currently used, but is here for consistency with cf_merge
 
-    # time_units = shared['time_units']
     target_dir = shared["target_dir"]
-    # reference_vars = shared['reference_vars']
-
-    # if global_vars:
-    #     global reference_vars, vocabulary
-    #     reference_vars = global_vars['reference_vars']
-    #     vocabulary = global_vars['vocabulary']
-
+    
     group.processed = []
 
     if shared["verbose"]:
@@ -58,11 +49,6 @@ def process_large(filepath: str, group: DsGroup, title: str, shared: dict) -> st
             f"{group.name} - file {op.basename(filepath)}. Title passed "
             f"in: {title}."
         )
-        # print(
-        #     f"Process {os.getpid()}: process_large running on group "
-        #     f"{group.name} - file {op.basename(filepath)}."
-        #     f"Title passed in: {title}."
-        # )
 
     with xr.open_dataset(filepath, decode_times=False) as dataset:
         # apply chunking if large (e.g. ds.nbytes >= 1e9).
@@ -82,7 +68,7 @@ def process_large(filepath: str, group: DsGroup, title: str, shared: dict) -> st
                 time_var=group.time_var,
                 shared=shared,
                 last_time_point=last_time_point,
-            )  # time_var[i]
+            )
         except Exception as e:
             errors.append["process_large: globals_to_vars: " + str(e)]
             return {"warnings": warnings, "errors": errors, "log": log}
@@ -101,6 +87,7 @@ def process_large(filepath: str, group: DsGroup, title: str, shared: dict) -> st
         except AttributeError as e:
             errors.append("process_large: MoncDs: " + str(e))
             return {"warnings": warnings, "errors": errors, "log": log}
+        
         # Call CF compliance function:
         # Adds any missing global attributes required by CF convention
         # Derives any required global attributes from options database
@@ -117,33 +104,43 @@ def process_large(filepath: str, group: DsGroup, title: str, shared: dict) -> st
         if group.action == "split":
             # Split dataset by time-point, yielding multiple
             # new datasets. Append time to titles.
-            (processed, split_log) = split_ds(
-                dataset=monc_ds.ds, shared=shared, var=monc_ds.time_var
-            )
+            try:
+                (processed, split_log) = split_ds(
+                    dataset=monc_ds.ds, shared=shared, var=monc_ds.time_var
+                )
+                # processed only ever needs to hold latest collection of 
+                # datasets.
+            except AttributeError as e:
+                errors.append("process_large: split_ds: " + str(e))
+                return {"warnings": warnings, "errors": errors, "log": log}
             log += split_log
             log.append(
                 f"split_ds returned datasets with titles "
                 + ", ".join(ds.attrs["title"] for ds in processed)
             )
-            # processed only ever needs to hold latest collection of datasets.
         else:
-            processed = monc_ds.ds  # Will this persist after context of ds ends?
+            # If dataset is not to be split, consider the existing dataset to
+            # be "processed".
+            processed = monc_ds.ds  # Will this persist after context of ds ends? If so, consider adding garbage collection.
 
     writers = []
     # For each new dataset:
     for i, ds in enumerate(processed):
-        # Update required global attributes (MONC time, previous diagnostic write at).
-        for attr, (func, attr_type) in split_attrs.items():
-            if attr in ds.attrs:
-                ds.attrs[attr] = attr_type(func(i, processed))
-            else:
-                errors.append(
-                    AttributeError(
-                        f"setup.py: split_attrs specifies derivation of "
-                        f"{attr} in split datasets, but attribute was not found."
+        # Update required global attributes (MONC time, previous diagnostic 
+        # write at). Only need to do if multiple datasets present.
+        if len(processed) > 1:
+            for attr, (func, attr_type) in split_attrs.items():
+                if attr in ds.attrs:
+                    ds.attrs[attr] = attr_type(func(i, processed))
+                else:
+                    errors.append(
+                        AttributeError(
+                            f"setup.py: split_attrs specifies derivation of "
+                            f"{attr} in split datasets, but attribute was not "
+                            f"found."
+                        )
                     )
-                )
-                return {"warnings": warnings, "errors": errors, "log": log}
+                    return {"warnings": warnings, "errors": errors, "log": log}
 
         # Ensure all attributes comply with CF recommendation to use only
         # alphanumeric and underscore characters.
@@ -255,7 +252,6 @@ def process_large(filepath: str, group: DsGroup, title: str, shared: dict) -> st
         "errors": errors,
         "log": log,
     }
-    # return (group, shared)
 
 
 def cf_merge(group: DsGroup, shared: dict) -> str:
@@ -323,17 +319,9 @@ def process_parallel(groups: dict, n_proc: int, shared: dict):
                 will still work as normal.
     """
 
-    # # Update global dict, g, so all new processes inherit up-to-date version.
-    # global g
-    # g = shared
-
-    # target_dir = shared['target_dir']
-    # time_units = shared['time_units']
-    # vocabulary = shared['vocabulary']
     reference_vars = shared["reference_vars"]
     warnings = []
 
-    # global reference_vars, vocabulary
     # Verify n_proc + controller doesn't exceed available cores
     # TODO: confirm this works on Jasmin!
     if n_proc + 1 > os.cpu_count():
@@ -344,8 +332,9 @@ def process_parallel(groups: dict, n_proc: int, shared: dict):
     }  # set up empty dict for results from process pool
 
     # Set up process pool
-    # set_start_method('fork')  # only available on Unix systems. not Mac/Win.
-    # fork method allows each new process to inherit the parent's whole state
+    # multiprocessing.set_start_method('fork')
+    # Fork method only available on Unix systems, not Mac/Win.
+    # It allows each new process to inherit the parent's whole state
     # (global variables etc). Otherwise, each spawned process will have only
     # values set at initialisation.
     with Pool(processes=n_proc) as pool:
@@ -385,6 +374,9 @@ def process_parallel(groups: dict, n_proc: int, shared: dict):
 
                 # Wait for 0+1d processing to finish, so reference variables
                 # are available for perturbations.
+                # More generically, this would only be executed if the
+                # reference_variable attribute is present for any of the
+                # dataset's variables in the vocabulary.
                 for d in {v["dim"] for v in reference_vars.values()}:
                     for r in results[d]:
                         result_dict = r.get()
@@ -426,15 +418,6 @@ def process_parallel(groups: dict, n_proc: int, shared: dict):
                                         "vocabulary"
                                     ].items()
                                 ]
-                                # for v_dim, updates in update_globals['vocabulary'].items():
-                                #     for update_var, update_dict in updates.items():
-                                #         shared['vocabulary'][v_dim][update_var].update(update_dict)
-                        # [reference_vars.update({v: result[v]})
-                        #  for v in result.keys() if 'filepath' in result[v]]
-                    # groups[d].processed = [
-                    #     result.get() for result in results[d]
-                    # ]  # This should only set groups[d].processed to its
-                    #     # current value, but serves as a "completed" flag.
 
                 # Round-robin allocation of file processing to controller and
                 # workers:
@@ -456,18 +439,6 @@ def process_parallel(groups: dict, n_proc: int, shared: dict):
                         )
 
                 # Now work on remaining files on controller process
-                # group.processed = []
-                # [
-                #     [
-                #         group.processed.append(ds)
-                #         for ds in process_large(
-                #             filepath=filepath,
-                #             group=group,
-                #             title=title,
-                #             shared=shared
-                #         )
-                #     ] for filepath in for_controller
-                # ]
                 for filepath in for_controller:
                     r = process_large(
                         filepath=filepath, group=group, title=title, shared=shared
@@ -499,32 +470,17 @@ def process_parallel(groups: dict, n_proc: int, shared: dict):
                         groups[dim].processed = list(
                             {*groups[dim].processed, *update_group["processed"]}
                         )
-                        # process_large(
-                        #     filepath=filepath,
-                        #     group=group,
-                        #     title=title,
-                        #     shared=shared
-                        # )[0]
                     else:
                         groups[dim].processed = update_group["processed"]
-                        # process_large(
-                        #         filepath=filepath,
-                        #         group=group,
-                        #         title=title,
-                        #         shared=shared
-                        #     )[0]
                     groups[dim].time_var = update_group["time_var"]
 
-                # Gather completed jobs
+                # Gather completed "large" jobs
                 # TODO: is this efficient, or can it be done after merging
                 # groups?
                 # If this moves below, each group's processed attribute should
                 # be updated in the process_large function, then the group
                 # returned.
-                # [result.get() for result in results[dim]]
                 for result in results[dim]:
-                    # [update_group,
-                    #  update_globals] = result.get()
                     r = result.get()
                     if "log" in r and r["log"]:
                         print("".join([entry + "\n" for entry in r["log"]]))
@@ -562,14 +518,6 @@ def process_parallel(groups: dict, n_proc: int, shared: dict):
 
             # If group is to be merged:
             elif group.action == "merge":
-                # results[dim] = pool.apply_async(
-                #     func=cf_merge,
-                #     kwds={
-                #         'group': group,
-                #         'time_units': time_units,
-                #         'target_dir': target_dir
-                #     }
-                # )
                 results[dim].append(
                     pool.apply_async(
                         func=cf_merge, kwds={"group": group, "shared": shared}
@@ -582,23 +530,19 @@ def process_parallel(groups: dict, n_proc: int, shared: dict):
                 # ENHANCEMENT: Could still evaluate by size whether it's
                 # processed locally or passed to the Pool.
 
-                # Round-robin allocation of file processing to controller and
-                # workers:
+                # Allocate file processing to workers:
                 results[dim].append(
                     pool.apply_async(
                         func=cfize_all_datasets, kwds={"group": group, "shared": shared}
                     )
                 )
 
-        # Check all other processes are complete
-        # for result in results:
+        # Check all other processes are complete for each result in results:
         for dim in sorted(list(groups.keys())):
-            # Sort because expect smaller to finish first
+            # Sort because expect (and need) smaller to finish first
             if not groups[dim].processed:
                 groups[dim].processed = []
                 for result in results[dim]:
-                    # [update_group,
-                    #  update_globals] = result.get()
                     r = result.get()
                     if "log" in r and r["log"]:
                         print("".join([entry + "\n" for entry in r["log"]]))
@@ -630,10 +574,6 @@ def process_parallel(groups: dict, n_proc: int, shared: dict):
                                     "vocabulary"
                                 ].items()
                             ]
-                # [groups.update({dim: result.get()[0]}) for result in results[dim]]
-                # groups[dim].processed = [
-                #     result.get() for result in results[dim]
-                # ]
     return warnings
 
 
@@ -669,11 +609,11 @@ def cfize_all_datasets(group: DsGroup, shared: dict) -> list:
     #             # Set filepath and save as processed
     #             filepath = op.join(target_dir, f"{title}.nc")
 
-    #             # TODO: can't yet provide filepath to reference variables if not merged;
-    #             # this would need references_vars[v]['filepath'] to contain a list or
-    #             # dict with e.g. timepoints as keys.
-    #             # # Check for any reference variables for perturbation variables, and note
-    #             # # filepath if found:
+    #             # TODO: can't yet provide filepath to reference variables if 
+    #               not merged; this would need references_vars[v]['filepath'] 
+    #               to contain a list or dict with e.g. timepoints as keys.
+    #             # # Check for any reference variables for perturbation 
+    #               variables, and note filepath if found:
     #             # [
     #             #     reference_vars[v].update({'filepath':filepath})
     #             #     for v in reference_vars.keys()
@@ -756,14 +696,6 @@ def process_serial(groups: dict, shared: dict):
             )
 
             group.processed = []
-            # TODO: Check that the following has been superseded by the loop
-            # immediately after it.
-            # [
-            #     process_large(
-            #         filepath=filepath, group=group, title=title, shared=shared
-            #     )
-            #     for filepath in group.filepaths
-            # ]
             for filepath in group.filepaths:
                 r = process_large(
                     filepath=filepath, group=group, title=title, shared=shared
@@ -792,20 +724,9 @@ def process_serial(groups: dict, shared: dict):
                     group.processed = list(
                         {*group.processed, *update_group["processed"]}
                     )
-                    # process_large(
-                    #     filepath=filepath,
-                    #     group=group,
-                    #     title=title,
-                    #     shared=shared
-                    # )[0]
                 else:
                     group.processed = update_group["processed"]
-                    # process_large(
-                    #         filepath=filepath,
-                    #         group=group,
-                    #         title=title,
-                    #         shared=shared
-                    #     )[0]
+                    
                 if "time_var" in update_group:
                     group.time_var = update_group["time_var"]
 
@@ -822,11 +743,6 @@ def process_serial(groups: dict, shared: dict):
                         + str(rtn["error"])
                     )
 
-                # group.processed = cf_merge(
-                #         group=group,
-                #         time_units=time_units,
-                #         target_dir=target_dir
-                # )
                 rtn = group.cfize_and_save(shared=shared)
                 if "errors" in rtn and rtn["errors"]:
                     sys.exit(
@@ -865,11 +781,6 @@ def process_serial(groups: dict, shared: dict):
         else:
             # TODO: to be tested
             group.cf_only(time_units=time_units, target_dir=target_dir)
-            # group.processed = cf_only(
-            #     group=group,
-            #     time_units=time_units,
-            #     target_dir=target_dir
-            # )
     return warnings
 
 
@@ -888,11 +799,6 @@ def sort_nc(directory, shared: dict) -> [dict, list]:
     if shared["verbose"]:
         print(strftime("%H:%M:%S", localtime()), "Categorising files by dimension")
 
-    # global vocabulary, reference_vars
-
-    # by_dim = {n_dim: DsGroup(
-    #     name=group, n_dims=n_dim, action=g['CONFIG']['group_actions'][group], shared=shared
-    # ) for n_dim, group in g['CONFIG']['dimension_groups'].items()}
     by_dim = {}
     for n_dim, group in shared["CONFIG"]["dimension_groups"].items():
         by_dim[n_dim] = DsGroup(
@@ -920,11 +826,9 @@ def sort_nc(directory, shared: dict) -> [dict, list]:
                 n_dims = get_n_dims(ds) - 1  # Subtract 1 for time.
                 # Add filepath to relevant dimension group.
                 by_dim[n_dims].add(filepath=filepath)
-                # print(f"{op.basename(filepath)}: {n_dims} spatial dimensions.")
             else:
                 # Categorise as potential input file
                 input_files.append(filepath)
-                # print(f"{op.basename}: possible input file.")
 
     return [by_dim, input_files]
 
@@ -1227,8 +1131,6 @@ def cfize():
         [group_by_dim, input_files] = sort_nc(source_dir, shared=g)
     except Exception as e:
         sys.exit("sort_nc: " + str(e))
-
-    # ID time variable of each group from VOCAB.
 
     # Attempt to derive time unit info, if not already supplied at command line.
     # Assume time units will be common to all datasets in directory.
