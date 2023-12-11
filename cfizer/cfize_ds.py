@@ -8,6 +8,7 @@ from time import perf_counter, strftime, localtime
 from datetime import datetime
 import numpy as np
 from typing import Union
+import os
 
 
 def get_n_dims(dataset: xr.Dataset) -> int:
@@ -38,10 +39,10 @@ def is_monc(dataset: xr.Dataset) -> bool:
     )
 
 
-# @performance_time
 def split_ds(
     dataset: xr.Dataset, shared: dict, var: str = "time"
 ) -> tuple[list[xr.Dataset], str]:
+    
     start_time = perf_counter()
     log = []
     if var not in dataset.dims:
@@ -52,8 +53,10 @@ def split_ds(
             f"splitting dataset {dataset.attrs['title']} by {var}."
         )
     base_title = dataset.attrs["title"].strip("_ +,.&") + "_"
+    # Separate along the specified axis using xarray.Dataset.groupby method.
+    # Use deep copy option to produce independent new datasets.
     grouped = {point: ds.copy(deep=True) for (point, ds) in dataset.groupby(var)}
-    for point, ds in grouped.items():
+    for point in grouped.keys():
         # Append relevant coordinate value to title
         grouped[point].attrs["title"] = base_title + str(int(point))
         if shared["verbose"]:
@@ -70,7 +73,6 @@ def split_ds(
     return (split, log)
 
 
-# @performance_time
 def ds_to_nc(
     ds: xr.Dataset,
     filepath: str,
@@ -89,7 +91,6 @@ def ds_to_nc(
         ds.to_netcdf(path=filepath, encoding=encodings)
 
 
-# @performance_time
 def ds_to_nc_dask(
     ds: xr.Dataset,
     filepath: str,
@@ -109,7 +110,6 @@ def ds_to_nc_dask(
         return ds.to_netcdf(path=filepath, encoding=encodings, compute=False)
 
 
-# @performance_time
 def perform_write(writer: Delayed, shared: dict = None) -> None:
     writer.compute()
 
@@ -125,12 +125,13 @@ class MoncDs:
         self.log = []
         self.warnings = []
         self.ds = dataset
+        self.options_db = None  # Not essential, but considered good practice
 
         if time_variable:
             self.time_var = time_variable
         else:
             raise AttributeError(
-                "DsGroup: time variable must be specified via the "
+                "MoncDs: time variable must be specified via the "
                 "time_variable parameter."
             )
 
@@ -147,8 +148,11 @@ class MoncDs:
 
     def cfize(self, shared: dict):
         """
-        vocabulary can't be global, because this creates conflicts in parallel
-        processing.
+        Run CF compliance functions on dataset.
+
+        shared: takes place of a global dictionary, to give access to 
+        vocabulary. Can't use globals directly, because it creates conflicts in 
+        parallel processing.
         """
 
         if shared["verbose"]:
@@ -160,7 +164,7 @@ class MoncDs:
             )
 
         # Pull required options_database info into dictionary
-        self.get_options(shared=shared)
+        self.get_options(shared=shared)  # Sets self.options_db
 
         # Convert any required options_database pairs to attributes (with
         # appropriate np.dtypes)
@@ -173,8 +177,9 @@ class MoncDs:
         # Add any missing coordinates
         self.missing_coords(shared=shared)
 
-        # update all (non-options-database) variables in either shared['vocabulary'][dim] or
-        # dataset:
+        # update all (non-options-database) variables in dataset (this will
+        # look for required data in shared['vocabulary'][dim], but will only
+        # use what corresponds to variables present):
         var_list = set(self.ds.variables)
         var_list.discard(shared["CONFIG"]["options_database"]["variable"])
         [
@@ -198,7 +203,7 @@ class MoncDs:
     def missing_coords(self, shared: dict, dim: str = None):
         """
         Looks for any dimensions that currently don't also exist as coordinate
-        variables.
+        variables, adding if necessary.
         dim: str (optional)
             dimension from which coordinate should be created.
         """
@@ -216,19 +221,22 @@ class MoncDs:
                 dim_type = self.ds.coords[dim].dtype
         else:
             for d in self.ds.dims:
-                # Set type to match existing spatial coordinates (assume for now all
-                # are the same)
+                # Set type to match existing spatial coordinates (assume for 
+                # now all are the same)
                 if d in self.ds.coords:
                     if d != self.time_var:
                         dim_type = self.ds.coords[d].dtype
+                # If dimension is not an existing coordinate variable, and not
+                # one associated with the options database "variable", add to
+                # the list of missing coordinates.
                 elif d not in shared["CONFIG"]["options_database"]["dimensions"]:
                     missing.append(d)
 
         # For each coord in list:
         for d in missing:
             # Look for any required parameters & attributes in
-            # 1. g['CONFIG']
-            # 2. VOCAB
+            # shared["CONFIG"]. Although some may be defined in vocabulary,
+            # this won't have the grid spacing and other needed data.
             attributes = {}
 
             # Look in g['CONFIG'] for parameters required to set up variable:
@@ -243,14 +251,26 @@ class MoncDs:
                     )
                     midpoint = (
                         "cent" in config["position"] or "mid" in config["position"]
-                    )
-                    for k, v in config["attributes"].items():
-                        if k.lower() == "units" and Units(v).isvalid:
-                            attributes["units"] = format_units(v)
+                    )  # Accepts either spelling of 'centre', or mid, middle, mid-point, etc. Anything else treated as 'edge'.
+                    if "attributes" in config:
+                        for k, v in config["attributes"].items():
+                            if k.lower() == "units" and Units(v).isvalid:
+                                attributes["units"] = format_units(v)
+                            else:
+                                attributes[k.lower().replace(" ", "_")] = (
+                                    v if k != "standard_name" else v.replace(" ", "_")
+                                )
                         else:
-                            attributes[k.lower().replace(" ", "_")] = (
-                                v if k != "standard_name" else v.replace(" ", "_")
-                            )
+                            # If attributes in vocabulary, skip for now, as 
+                            # these will be updated in cfize_variables anyway.
+                            if d not in shared["vocabulary"][self.n_dims]:
+                                raise ConfigError(
+                                    f"Processing {self.n_dims}d files: "
+                                    f"dimension {d} has no corresponding "
+                                    f"coordinate variable, and CF metadata for "
+                                    f"this variable is missing from both "
+                                    f"config.yml and vocabulary.yml."
+                                )
                 except KeyError:
                     raise ConfigError(
                         f"Processing {self.n_dims}d files: Parameters needed "
@@ -271,9 +291,6 @@ class MoncDs:
                     f"options_database."
                 )
 
-            # Skip looking for attributes in vocabulary, as these will be
-            # updated in cfize_variables anyway.
-
             # Generate coordinate points as np.ndarray of required dtype
             points = generate_coords(
                 number=self.ds.dims[d],
@@ -289,9 +306,11 @@ class MoncDs:
             self.ds = self.ds.assign(variables={d: new_var})
 
     def update_units(self, var: str, shared: dict, updates: dict = None):
-        """Add/update units for specified variable."""
+        """Add/update/check units for specified variable."""
 
         time_units = shared["time_units"]
+        # Missing unit data may be found outside vocabulary if var is a new
+        # coordinate variable.
         if var in shared["CONFIG"]["new_coordinate_variables"]:
             if not updates:
                 updates = shared["CONFIG"]["new_coordinate_variables"][var][
@@ -309,7 +328,7 @@ class MoncDs:
                 ]
 
         if not updates or "units" not in updates:
-            # If no new unit, check existing is present & CF compliant:
+            # If no new units spec, check existing is present & CF compliant:
             if "units" in self.ds[var].attrs:
                 # If standard_name, look up
                 if "standard_name" in self.ds[var].attrs:
@@ -318,6 +337,8 @@ class MoncDs:
                 # Otherwise, check with cfunits.Units().isvalid
                 else:
                     if Units(self.ds[var].attrs["units"]).isvalid:
+                        # If unit is valid, check whether it's a time-related
+                        # unit, in which case it needs to have a reference time.
                         if (
                             var == self.time_var
                             or (
@@ -334,6 +355,8 @@ class MoncDs:
                                     f"'<time unit> since <reference date[time]"
                                     f"'. No updated unit found in vocabulary."
                                 )
+                        # If unit is valid, format it to look like units in CF
+                        # standard names table.
                         self.ds[var].attrs["units"] = format_units(
                             self.ds[var].attrs["units"]
                         )
@@ -406,10 +429,11 @@ class MoncDs:
                 self.ds[var].attrs["axis"] = "T"
 
             else:
+                # Units for dimension other than time
                 new_units = Units(updates["units"])
 
                 # If spatial coordinate variable, add/update any specified or
-                # implied axis.
+                # implied axis. Log assumption if implied.
                 if var in self.ds.dims:
                     if "axis" in updates:
                         self.ds[var].attrs["axis"] = updates["axis"]
@@ -432,19 +456,18 @@ class MoncDs:
                             )
                         self.ds[var].attrs["axis"] = var[0].upper()
                     elif "axis" not in self.ds[var].attrs:
-                        # Prompt user if required.
+                        # TODO: Prompt user if required.
                         raise ConfigError(
                             f"update_units: Axis should be specified for "
-                            f"spatial coordinate "
-                            f"variables. No axis attribute found in dataset, "
-                            f"vocabulary or configuration file for variable "
-                            f"{var}."
+                            f"spatial coordinate variables. No axis attribute "
+                            f"found in dataset, vocabulary or configuration "
+                            f"file for variable {var}."
                         )
 
-                    # Add positive attribute if required/specified (not expected).
+                    # TODO: Add positive attribute if required/specified 
+                    # (not expected).
 
-            # If any new unit equivalent but not equal to any existing, run
-            # conversion.
+            # If any new unit equivalent but not equal to the existing, convert.
             if "units" in self.ds[var].attrs:
                 old_units = Units(self.ds[var].attrs["units"])
                 if new_units.equivalent(old_units) and not new_units.equals(old_units):
@@ -480,23 +503,28 @@ class MoncDs:
             if var not in self.ds.variables:
                 raise AttributeError(
                     f"cfize_variables: Variable {var} not found in dataset."
-                )
+                )  # This won't happen in current version, as variables argument *is* from self.ds.variables.
                 # ENHANCEMENT: If variable not in dataset, as is, look for
-                # wildcards or use it as a stem. E.g. time_series* should identify
-                # time_series_300_1800 as a match.
+                # wildcards or use it as a stem. E.g. time_series* and 
+                # time_series should both identify time_series_300_1800 as a 
+                # match.
 
             # Find variable's updates in shared['vocabulary'][dim][variable].
             try:
                 updates = shared["vocabulary"][self.n_dims][var]
             except KeyError:
-                raise VocabError(
-                    f"cfize_variables: {var} not found in vocabulary "
-                    f"(dimension {self.n_dims})."
-                )
-                # # check/update any units already present.
-                # self.update_units(var=var, time_units=shared['time_units'])
-                # continue
-
+                # If not in vocabulary, check variable is already CF compliant.
+                if not(
+                    "standard_name" in self.ds[var].attrs or "long_name" in self.ds[var].attrs
+                    ) or "units" not in self.ds[var].attrs:
+                    raise VocabError(
+                        f"cfize_variables: {var} not found in vocabulary "
+                        f"(dimension {self.n_dims})."
+                    )
+                # Subsequent method calls will evaluate validity of units and, 
+                # if present, standard_name.
+                updates = {}  # No keys means no updates - only checking.
+            
             # update variable's dimensions if required
             if "dimension_changes" in updates:
                 # Check specified dim(s) exist(s)
@@ -511,11 +539,11 @@ class MoncDs:
                         f"vocabulary - dimension_changes, is not a dimension "
                         f"of {var}."
                     )
-                # swap_dims
+                # Swap dimensions using xarray.DataArray.swap_dims method.
                 self.ds[var] = self.ds[var].swap_dims(updates["dimension_changes"])
 
                 # If new dim not in coords, call missing_coords function,
-                # perhaps with new coord name as argument
+                # with new coord name as argument
                 for d in set(self.ds[var].dims) - set(self.ds[var].dims).intersection(
                     set(self.ds.coords)
                 ):
@@ -524,11 +552,15 @@ class MoncDs:
             # Add/update names:
             # standard_name &/or long_name
             if "standard_name" in updates:
+                self.ds[var].attrs["standard_name"] = updates["standard_name"]
+
+            if "standard_name" in self.ds[var].attrs:
                 # TODO: check standard_name is in list of standard names.
                 # This should be done in setting up vocabulary.yml, but best to
-                # check here nonetheless.
-
-                self.ds[var].attrs["standard_name"] = updates["standard_name"]
+                # check here nonetheless. This also then works for cases where
+                # standard_name is not in vocabulary entry, but is already
+                # present in the variable's metadata.
+                pass
 
             if "long_name" in updates:
                 self.ds[var].attrs["long_name"] = updates["long_name"]
@@ -571,6 +603,8 @@ class MoncDs:
                     )
 
                 # Get reference variable data array from (updated) vocabulary.
+                # This will crash if reference data are not available, and crash
+                # needs to be handled by function calling MoncDs.cfize method.
                 ref_array = updates["ref_array"]
 
                 # Add reference DataArray to perturbation variable DataArray, &
@@ -589,11 +623,12 @@ class MoncDs:
                 )
 
     def add_cf_attrs(self, shared: dict, **kwargs):
-        defaults = {}  # {attr: None for attr in CF_ATTRIBUTES}
+        defaults = {}
 
         # History attribute should be an audit trail, and so include
         # whatever processing is done to each file, and updated just
-        # prior to saving NetCDF file.
+        # prior to saving NetCDF file. Default is to at least report CFizer
+        # version.
         defaults[
             "history"
         ] = f'{datetime.now().isoformat(timespec="minutes", sep=" ")}: MONC output files converted by CFizer version {VERSION}, https://github.com/cemac/CFizer.'
@@ -621,8 +656,8 @@ class MoncDs:
 
     def get_options(self, shared: dict) -> dict:
         """
-        Note: the xarray.Dataset.assign_attrs() method isn't suitable here, as it
-        creates a new dataset, rather than updating the existing one.
+        Note: the xarray.Dataset.assign_attrs() method isn't suitable here, as 
+        it creates a new dataset, rather than updating the existing one.
         """
 
         fields = shared["CONFIG"]["options_to_attrs"]
