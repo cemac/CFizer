@@ -441,6 +441,8 @@ def process_parallel(groups: dict, n_proc: int, shared: dict):
                     r = process_large(
                         filepath=filepath, group=group, title=title, shared=shared
                     )
+                    # Collect any log entries, errors and warnings returned 
+                    # from processing.
                     if "log" in r and r["log"]:
                         print("".join([entry + "\n" for entry in r["log"]]))
                     if "errors" in r and r["errors"]:
@@ -1160,7 +1162,7 @@ def cfize():
     # These are global variables (not constants), but must be passed
     # explicitly to any functions that may run on a separate process.
 
-    # For each dimension group:
+    # Process NC files by group. For each dimension group:
     # If n_proc>0, use process pool; otherwise process sequentially.
     try:
         if n_proc > 0:
@@ -1173,7 +1175,8 @@ def cfize():
         sys.exit("Processing: " + str(e))
 
     # TODO: move the following to the process_* routines?
-    # Find dimension groups to be merged
+    # Find dimension groups to be merged, based on matches in config.yml's
+    # dimension_groups and group_actions fields.
     groups_to_merge = {}
     for group_name in g["CONFIG"]["group_actions"].keys():
         groups_to_merge[group_name] = [
@@ -1183,7 +1186,7 @@ def cfize():
             groups_to_merge.pop(group_name)
 
     # For each set of dimension groups to be merged:
-    for name, groups in groups_to_merge.items():
+    for groups in groups_to_merge.values():
         # Create new group, comprising the groups to be merged.
         merger = DsGroup(groups=groups, shared=g)
         if merger.log:
@@ -1193,6 +1196,8 @@ def cfize():
             # Merge each group's resultant single dataset
             try:
                 (merged_file, log) = merger.merge_groups(shared=g)
+                # merged_file is the filepath of the resulting file, but is not
+                # currently used.
             except xr.MergeError as e:
                 sys.exit("Merge error in DsGroup.merge_groups: " + str(e))
             except Exception as e:
@@ -1200,10 +1205,12 @@ def cfize():
             if log:
                 print("".join([entry + "\n" for entry in log]))
 
+        # Add resulting group to collection, with combined dimensions as key
         group_by_dim[re.split(merger.stem, merger.name)[1]] = merger
 
         # Delete interim NC files, unless flagged to do otherwise.
-        # TODO: this needs to wait until all 3d are done.
+        # TODO: if group merging is moved into parallel/serial processing
+        # functions, this needs to wait until all 3d are done.
         if not args.keep_interim:
             try:
                 [os.remove(f) for f in merger.filepaths]
@@ -1226,7 +1233,8 @@ def cfize():
 
     # Generate logfile, containing all configuration details & file conversion
     # history.
-    # First ensure all data are strings, for YAML output
+
+    # First ensure all data from global dictionary are strings, for YAML output.
     audit_trail = dict_strings(g)
 
     audit_trail["warnings"] = list(set([str(e) for e in warnings]))
@@ -1244,6 +1252,8 @@ def cfize():
                 }
             }
         )
+
+    # Write audit trail to log file.
     try:
         with open(op.join(target_dir, g["logfile"]), "w") as logfile:
             yaml.safe_dump(audit_trail, logfile)

@@ -46,6 +46,11 @@ attributes_to_split:
 # Attributes for which to assign a single value per group. Key: value pairs, with values being data types. If not built in, specify numpy (e.g. numpy.int32).
 group_attributes:
   created: 'datetime.datetime'
+# new_coordinate_variables:
+# - spacing specifies which options database key to use for grid spacing.
+# - position should be either centre or edge.
+# - attributes specify CF-compliant metadata required: axis, units and
+#   standard_name and/or long_name.
 new_coordinate_variables:
   x:
     spacing: dxx

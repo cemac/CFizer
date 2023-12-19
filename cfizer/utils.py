@@ -6,6 +6,11 @@ from typing import Union
 
 def str_to_class(module: str, class_name: str):
     """
+    Returns a class with the name provided as a string, which can be used for type-casting.
+    
+    module: name of the module defining the class, e.g. numpy
+    class_name: the name of the wanted class, e.g. float64
+
     Adapted from https://stackoverflow.com/a/1176180
     """
     return getattr(sys.modules[module], class_name)
@@ -18,7 +23,16 @@ def first_rest(
     i: int,
     ds_list: list[xarray.Dataset],
 ):
-    # print("first_rest received:", first_var, rest_var, np_type, i, ds_list)
+    """
+    Returns classes for the variables to be used for the first and remaining
+    values for a global variable, in a dataset to be split.
+
+    first_var:  name of variable providing first dataset in series' value.
+    rest_var: name of variable providing values for remaining datasets in series.
+    module_type: the data type to be applied, including the module name, e.g. 'numpy.float64'
+    i: dataset's position in series - 0 is first.
+    ds_list: list containing datasets resulting from split.
+    """
     var = first_var if i == 0 else rest_var
     if var in ds_list[0].variables:
         return str_to_class(*module_type.split("."))(ds_list[0][var].data.tolist())
@@ -73,11 +87,23 @@ def generate_coords(
     midpoint: bool = False,
     data_type: np.dtype = np.float64,
 ) -> np.ndarray:
+    """
+    Returns a numpy array containing points for a new coordinate variable.
+    """
     first = 0.5 if midpoint else 0
     return np.arange(first, number, 1, dtype=data_type) * spacing
 
 
 def dict_strings(d: dict) -> dict:
+    """
+    Converts a potentially complex (nested) dictionary to a collection 
+    (dictionary or list) of strings.
+    Will also handle lists, tuples and sets. Datasets and Data Arrays will
+    return None (to skip any such stored e.g. in vocabulary), while it attempts
+    to return the string representation of any other types using a __str__ 
+    method, if defined.
+    This is used in generating the log file.
+    """
     all_strings = {}
     if not isinstance(d, dict):
         if isinstance(d, (list, tuple, set)):

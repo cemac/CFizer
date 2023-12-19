@@ -28,7 +28,8 @@ def vocab_from_xls(filepath: str) -> dict:
     application does not need to infer anything or look anywhere else for the
     required data.
     """
-    # TODO: Load or download standard_names table.
+    # TODO: Load or download standard_names table, for validation of standard
+    # names and associated units. See CEDA's cf-checker.
 
     vocabulary = {}
     try:

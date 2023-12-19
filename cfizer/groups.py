@@ -114,7 +114,6 @@ def variable_glob(ds: xr.Dataset, var_glob: str) -> list:
     ]
 
 
-# @performance_time
 def merge_dimensions(*args) -> xr.Dataset:
     """
     This is designed to merge datasets whose time coordinates match, but contain
@@ -130,12 +129,9 @@ def merge_dimensions(*args) -> xr.Dataset:
         return args[0].copy(deep=True)
 
     if len(args) == 2:
-        # try:
         new_ds = args[0].merge(
             other=args[1], join="exact", combine_attrs="drop_conflicts"
         )
-        # except xr.MergeError as e:
-        #     raise e
         return new_ds
 
     # call recursively until only 2 args to process
@@ -147,8 +143,6 @@ def globals_to_vars(
 ) -> xr.Dataset:
     vars = {}
     for global_attr, var_attrs in shared["CONFIG"]["global_to_variable"].items():
-        # Any advantage of name = global_attr.replace(' ', '_')?
-
         if global_attr not in ds.attrs:
             raise ConfigError(
                 f"Global attribute {global_attr} specified in config.yml, "
@@ -164,7 +158,6 @@ def globals_to_vars(
             data = [type_from_str(ds.attrs[global_attr])] * len(ds[time_var].data)
             coords = ds[time_var]
 
-        # try:
         vars[global_attr] = xr.DataArray(
             name=global_attr.replace(" ", "_").replace("-", "_"),
             data=data,
@@ -172,9 +165,7 @@ def globals_to_vars(
             dims=(time_var,),
             attrs=var_attrs,
         )
-        # except Exception as e:
-        #     raise e
-
+        
     return vars
 
 
@@ -199,7 +190,8 @@ class DsGroup:
         """
         self.log = []
         
-        # If groups parameter contains existing DsGroup objects:
+        # If groups parameter contains existing DsGroup objects, prepare for
+        # merging.
         if groups and all([isinstance(g, DsGroup) for g in groups]):
             # check each DsGroup has only one dataset in its processed
             # attribute.
@@ -241,9 +233,8 @@ class DsGroup:
                     f"DsGroup: Invalid filepath in processed attribute(s) of "
                     f"group(s) passed as argument(s): {self.filepaths}."
                 )
-            except Exception as e:
-                raise e
-
+            
+            # Determine common components of names and filenames
             try:
                 self.name = stem_str(*[group.name for group in groups])
                 self.stem = stem_str(*[g.stem for g in groups])
@@ -273,11 +264,14 @@ class DsGroup:
                     f"{[g.time_var for g in groups]}."
                 )
                 self.action = None
-                # raise ValueError('DsGroup: When attempting to combine groups, found mismatch in time variables.')
             else:
+                # Group merging is default action when groups are passed to
+                # DsGroup instantiation.
                 self.action = action.lower() if action else "merge_groups"
             self.processed = None  # Filepath(s) of output
+        
         else:
+            # Group contains datasets in NC files.
             self.n_dims = n_dims  # TODO: Could set to parse files to infer
             # if not given.
             self.name = name if name else f"{str(n_dims)}d"
@@ -285,8 +279,8 @@ class DsGroup:
             # compliance, but files won't be merged/split.
             self.action = action.lower() if action else None
             self.filepaths = filepaths if filepaths else []
-            # Cannot set default valueas an empty list in arguments, or it
-            # assigns SAME empty list to every instance.
+            # Cannot set default value as an empty list in method's arguments, 
+            # or it assigns SAME empty list to every instance.
 
             self.to_process = None
             self.processed = None  # Filepath(s) of output
@@ -572,16 +566,20 @@ class DsGroup:
 
         for ds in self.to_process:
             # Store largest value per group of any 'one per group' global
-            # attributes, as value to assign to merged dataset.
+            # attributes (group_attributes in config.yml), as value to assign 
+            # to merged dataset.
             for attr, attr_type in shared["group_attrs"].items():
                 value = ds.attrs[attr]
+                # Apply required type to attribute value.
                 try:
                     value = attr_type(value)
-                except TypeError as e:
+                except TypeError:
                     if attr_type == datetime:
                         try:
                             value = datetime.fromisoformat(value)
                         except:
+                            # if value can't be automatically formatted,
+                            # try to format "manually"
                             d, t = value.split()
                             d = [int(n) for n in re.split("[/-]", d)]
                             t = [int(n) for n in t.split(":")]
@@ -593,8 +591,6 @@ class DsGroup:
                                 minute=t[1],
                                 second=t[2],
                             )
-                    else:
-                        raise e
                 if attr in hold_attrs:
                     if value > hold_attrs[attr]:
                         hold_attrs[attr] = value
@@ -611,7 +607,7 @@ class DsGroup:
                 f"{perf_counter() - m_time} seconds."
             )
 
-        # Close source datasets
+        # Close source datasets to free memory.
         [ds.close() for ds in self.to_process]
         self.to_process = []
 
@@ -630,23 +626,18 @@ class DsGroup:
         # Set filepath and save as processed
         filepath = op.join(shared["target_dir"], f"{merged.attrs['title']}.nc")
 
-        # TODO: This is where history attribute should be appended
+        # Log merge operation for history attribute.
         history = (
             datetime.now().isoformat()
             + f": interim files {[op.basename(f) for f in self.filepaths]} processed for CF compliance using CFizer version {VERSION} (https://github.com/cemac/CFizer); configuration and source files listed in log file {shared['logfile']}"
         )
+        # TODO: History attribute should be appended rather than assigned
         merged.attrs["history"] = history
 
-        # Set encoding
-        # TODO: encoding needs to be set, with each variable's encoding
+        # Set encoding for output.
+        # Encoding needs to be set, with each variable's encoding
         # specified. Otherwise, _FillValue is applied to all, including
         # coordinates, the latter contravening CF Conventions.
-        # encodings = {
-        #     k:{
-        #         'dtype': v.dtype,
-        #         '_FillValue': None
-        #     } for k, v in merged.variables.items()
-        # }  # if k == 'options_database' or k in ds.ds.coords
         encodings = (
             {
                 k: {
@@ -667,19 +658,19 @@ class DsGroup:
         )
 
         # Save dataset to NetCDF
-        # xarray docs report engine='h5netcdf' may sometimes be
-        # faster. However, it doesn't natively handle the
-        # various string length types used here.
+        # xarray docs report engine='h5netcdf' may sometimes be faster. 
+        # However, it doesn't natively handle the various string length types 
+        # used here.
         if shared["verbose"]:
             w_start = perf_counter()
-        merged.to_netcdf(path=filepath, encoding=encodings)  # , engine='h5netcdf'
+        merged.to_netcdf(path=filepath, encoding=encodings)
         if shared["verbose"]:
             log.append(
                 f"         Process {os.getpid()}: xarray.Dataset.to_netcdf took "
                 f"{perf_counter() - w_start} seconds."
             )
 
-        # TODO: Run each file through cf-checker?
+        # TODO: Run each file through cf-checker
 
         # Close dataset
         merged.close()
