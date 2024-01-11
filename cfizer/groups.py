@@ -703,7 +703,6 @@ class DsGroup:
         # self.to_process = list(self.datasets())  # Open all datasets in group.
         return rtn
 
-    # @performance_time
     def cfize_and_save(self, shared: dict) -> dict:
         self.log = []
         if shared["verbose"]:
@@ -718,10 +717,6 @@ class DsGroup:
         errors = []
         warnings = []
         target_dir = shared["target_dir"]
-        # time_units = shared['time_units']
-        # vocab = shared['vocabulary']
-
-        # global reference_vars  # Allow reference_vars to be updated.
         self.processed = []
 
         if self.to_process and isinstance(self.to_process, xr.Dataset):
@@ -769,18 +764,6 @@ class DsGroup:
             # Set filepath and save as processed
             filepath = op.join(target_dir, f"{cf_ds.attrs['title']}.nc")
 
-            # Check for any reference variables for perturbation variables, and
-            # note filepath if found:
-            # [
-            #     reference_vars[v].update({'filepath':filepath})
-            #     for v in reference_vars.keys()
-            #     if v in cf_ds.variables
-            # ]
-            # [
-            #     shared['vocabulary'][reference_vars[v]['for'][0]][reference_vars[v]['for'][1]].update({'ref_array': cf_ds[v]})
-            #     for v in shared['reference_vars'].keys()
-            #     if v in cf_ds.variables
-            # ]
             for v in shared["reference_vars"].keys():
                 if v in cf_ds.variables:
                     [perturbation_dim, perturbation_var] = shared["reference_vars"][v][
@@ -829,7 +812,7 @@ class DsGroup:
                     k: {"dtype": v.dtype, "_FillValue": None}
                     for k, v in cf_ds.variables.items()
                 }
-            )  # if k == 'options_database' or k in ds.ds.coords
+            )
 
             # Save dataset to NetCDF
             # xarray docs report engine='h5netcdf' may sometimes be
@@ -861,10 +844,6 @@ class DsGroup:
 
             self.processed.append(filepath)
 
-        # if len(self.processed) == 1:
-        #     self.processed = self.processed[0]
-
-        # return update_globals
         return {
             "update_group": {"processed": self.processed, "time_var": self.time_var},
             "update_globals": update_globals,
