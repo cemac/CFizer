@@ -13,7 +13,7 @@ Clone this repository.
 
 Create an empty Anaconda environment in which to install CFizer, and activate it:
 ```
-conda env create -n cfizer
+conda create -n cfizer
 conda activate cfizer
 ```
 Alternatively, a pip venv may be used:
