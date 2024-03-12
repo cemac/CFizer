@@ -827,6 +827,10 @@ def process_serial(groups: dict, shared: dict) -> list:
                 #         time_units=time_units,
                 #         target_dir=target_dir
                 # )
+            except Exception as e:
+                sys.exit("process_serial (merging): " + str(e))
+
+            try:
                 rtn = group.cfize_and_save(shared=shared)
                 if "errors" in rtn and rtn["errors"]:
                     sys.exit(
@@ -858,7 +862,7 @@ def process_serial(groups: dict, shared: dict) -> list:
                             for v_dim, updates in update_globals["vocabulary"].items()
                         ]
             except Exception as e:
-                sys.exit("process_serial (merging): " + str(e))
+                sys.exit("process_serial (cfize+save): " + str(e))
 
         # Otherwise, process for CF compliance, but leave dataset as a
         # single, standalone file.
