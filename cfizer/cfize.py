@@ -1251,6 +1251,9 @@ def cfize():
     # 'seconds', but this will be overridden by any units found in time
     # coordinate variable(s).
 
+    # TODO: If time_units is None or not time_units.isreftime, CFizer
+    # should exit with an error message: no reference units specified or found.
+
     g.update(
         {
             "time_units": time_units,
