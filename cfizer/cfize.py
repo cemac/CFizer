@@ -926,6 +926,15 @@ def sort_nc(directory, shared: dict) -> [dict, list]:
                 input_files.append(filepath)
                 # print(f"{op.basename}: possible input file.")
 
+    # Drop any dimension-based groups containing no filepaths (ie empty groups)
+    for n_dim in shared["CONFIG"]["dimension_groups"].keys():
+        if by_dim[n_dim].is_empty():
+            if shared["verbose"]:
+                print(
+                    f"No files with {n_dim} spatial dimensions; deleting group."
+                )
+            by_dim.pop(n_dim, None)
+
     return [by_dim, input_files]
 
 

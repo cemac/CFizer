@@ -349,6 +349,9 @@ class DsGroup:
                     self.time_var = None  # Search in datasets as files are
                     # added.
 
+    def is_empty(self):
+        return self.filepaths == []
+    
     def yield_datasets(self):
         return ds_feed(self.filepaths)
 
