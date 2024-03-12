@@ -29,7 +29,7 @@ import sys
 from cfizer.utils import dict_strings
 
 
-def process_large(filepath: str, group: DsGroup, title: str, shared: dict) -> str:
+def process_large(filepath: str, group: DsGroup, title: str, shared: dict) -> dict:
     if shared["verbose"]:
         start_time = perf_counter()
 
@@ -258,7 +258,7 @@ def process_large(filepath: str, group: DsGroup, title: str, shared: dict) -> st
     # return (group, shared)
 
 
-def cf_merge(group: DsGroup, shared: dict) -> str:
+def cf_merge(group: DsGroup, shared: dict) -> dict:
     # global g
     # g = shared
     errors = []
@@ -314,7 +314,7 @@ def cf_merge(group: DsGroup, shared: dict) -> str:
     }
 
 
-def process_parallel(groups: dict, n_proc: int, shared: dict):
+def process_parallel(groups: dict, n_proc: int, shared: dict) -> list:
     """
     groups:     dimension-specific groups to be processed.
     n_proc:     number of processes in process pool (doesn't include controller)
@@ -637,7 +637,7 @@ def process_parallel(groups: dict, n_proc: int, shared: dict):
     return warnings
 
 
-def cfize_all_datasets(group: DsGroup, shared: dict) -> list:
+def cfize_all_datasets(group: DsGroup, shared: dict) -> dict:
     """
     Should print & return names of saved files
     TODO: This function still to be written and tested.
@@ -714,7 +714,7 @@ def cfize_all_datasets(group: DsGroup, shared: dict) -> list:
     }
 
 
-def process_serial(groups: dict, shared: dict):
+def process_serial(groups: dict, shared: dict) -> list:
     """
     groups:         dimension-specific groups to be processed.
     shared:         dictionary containing what would be global variables if all
@@ -873,7 +873,7 @@ def process_serial(groups: dict, shared: dict):
     return warnings
 
 
-def sort_nc(directory, shared: dict) -> [dict, list]:
+def sort_nc(directory, shared: dict) -> list[dict, list]:
     """
     Sorts into MONC output files and other NC files, the latter listed as
     possible input files.
