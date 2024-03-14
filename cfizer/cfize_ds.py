@@ -569,9 +569,24 @@ class MoncDs:
                         f"reference_variable must contain the name of the "
                         f"variable containing reference value(s)."
                     )
+                elif  "ref_array" not in updates or updates["ref_array"] is None:
+                    raise ValueError(
+                        f"cfize_variables: {var} is a relative quantity, "
+                        f"but the required reference variable, "
+                        f"{updates['reference_variable']}, from "
+                        f"{updates['ref_dim']}d data, has not been found."
+                        f"{updates['ref_dim']}d dataset series likely need "
+                        f"to be processed first. Otherwise, any instances of "
+                        f"perturbation_to_absolute: 'True' in vocabulary.yml "
+                        f"need to be set to 'False' or removed, and "
+                        f"the package rebuilt."
+                    )
 
                 # Get reference variable data array from (updated) vocabulary.
                 ref_array = updates["ref_array"]
+                    ref_var = shared['vocabulary'][self.n_dims][var]['reference_variable']
+                    ref_dim = shared['vocabulary'][self.n_dims][var]['reference_variable']
+                    
 
                 # Add reference DataArray to perturbation variable DataArray, &
                 # re-assign to variable as new array with existing attributes,
