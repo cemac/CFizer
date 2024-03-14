@@ -574,7 +574,7 @@ class MoncDs:
                         f"cfize_variables: {var} is a relative quantity, "
                         f"but the required reference variable, "
                         f"{updates['reference_variable']}, from "
-                        f"{updates['ref_dim']}d data, has not been found."
+                        f"{updates['ref_dim']}d data, has not been found. "
                         f"{updates['ref_dim']}d dataset series likely need "
                         f"to be processed first. Otherwise, any instances of "
                         f"perturbation_to_absolute: 'True' in vocabulary.yml "
