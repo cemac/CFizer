@@ -297,7 +297,7 @@
 3:
   p:
     long_name: Pressure
-    perturbation_to_absolute: 'True'
+    perturbation_to_absolute: True
     reference_variable: prefn
     standard_name: air_pressure
     units: Pa
@@ -320,7 +320,7 @@
     units: kg kg-1
   th:
     long_name: Potential Temperature
-    perturbation_to_absolute: 'True'
+    perturbation_to_absolute: True
     reference_variable: thref
     standard_name: air_potential_temperature
     units: K
