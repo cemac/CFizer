@@ -584,9 +584,6 @@ class MoncDs:
 
                 # Get reference variable data array from (updated) vocabulary.
                 ref_array = updates["ref_array"]
-                    ref_var = shared['vocabulary'][self.n_dims][var]['reference_variable']
-                    ref_dim = shared['vocabulary'][self.n_dims][var]['reference_variable']
-                    
 
                 # Add reference DataArray to perturbation variable DataArray, &
                 # re-assign to variable as new array with existing attributes,
