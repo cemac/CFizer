@@ -114,7 +114,6 @@ def variable_glob(ds: xr.Dataset, var_glob: str) -> list:
     ]
 
 
-# @performance_time
 def merge_dimensions(*args) -> xr.Dataset:
     """
     This is designed to merge datasets whose time coordinates match, but contain
@@ -130,12 +129,9 @@ def merge_dimensions(*args) -> xr.Dataset:
         return args[0].copy(deep=True)
 
     if len(args) == 2:
-        # try:
         new_ds = args[0].merge(
             other=args[1], join="exact", combine_attrs="drop_conflicts"
         )
-        # except xr.MergeError as e:
-        #     raise e
         return new_ds
 
     # call recursively until only 2 args to process
@@ -147,8 +143,6 @@ def globals_to_vars(
 ) -> xr.Dataset:
     vars = {}
     for global_attr, var_attrs in shared["CONFIG"]["global_to_variable"].items():
-        # Any advantage of name = global_attr.replace(' ', '_')?
-
         if global_attr not in ds.attrs:
             raise ConfigError(
                 f"Global attribute {global_attr} specified in config.yml, "
@@ -164,7 +158,6 @@ def globals_to_vars(
             data = [type_from_str(ds.attrs[global_attr])] * len(ds[time_var].data)
             coords = ds[time_var]
 
-        # try:
         vars[global_attr] = xr.DataArray(
             name=global_attr.replace(" ", "_").replace("-", "_"),
             data=data,
@@ -172,9 +165,7 @@ def globals_to_vars(
             dims=(time_var,),
             attrs=var_attrs,
         )
-        # except Exception as e:
-        #     raise e
-
+        
     return vars
 
 
@@ -198,9 +189,9 @@ class DsGroup:
                 such as z & zn.
         """
         self.log = []
-        # global vocabulary, reference_vars
-
-        # If groups parameter contains existing DsGroup objects:
+        
+        # If groups parameter contains existing DsGroup objects, prepare for
+        # merging.
         if groups and all([isinstance(g, DsGroup) for g in groups]):
             # check each DsGroup has only one dataset in its processed
             # attribute.
@@ -234,9 +225,6 @@ class DsGroup:
                             [op.basename(path) for path in self.filepaths]
                         )
                     )
-                    # print(
-                    #     f"Process {os.getpid()}: DsGroup: opening datasets {[op.basename(path) for path in self.filepaths]}."
-                    # )
                 self.to_process = [
                     xr.open_dataset(path, decode_times=False) for path in self.filepaths
                 ]  # Dataset objects
@@ -245,9 +233,8 @@ class DsGroup:
                     f"DsGroup: Invalid filepath in processed attribute(s) of "
                     f"group(s) passed as argument(s): {self.filepaths}."
                 )
-            except Exception as e:
-                raise e
-
+            
+            # Determine common components of names and filenames
             try:
                 self.name = stem_str(*[group.name for group in groups])
                 self.stem = stem_str(*[g.stem for g in groups])
@@ -260,11 +247,12 @@ class DsGroup:
             # name.
             self.name = self.stem.strip(" _") + "_" + self.name
 
-            # Check & identify common time variable.
+            # Derive the number of dimensions from those of the groups being combined.
             self.n_dims = sum(
                 [g.n_dims for g in groups]
             )  # TODO: This is a little dubious, given there's no guarantee dimension groups don't overlap, but works for MONC outputs where 0d & 1d are grouped.
 
+            # Check & identify common time variable
             self.time_var = time_variable or groups[0].time_var
             # Check all datasets to be merged have matching time coordinates.
             if not all([g.time_var == self.time_var for g in groups]):
@@ -275,18 +263,15 @@ class DsGroup:
                     f"found mismatch in time variables: "
                     f"{[g.time_var for g in groups]}."
                 )
-                # print(
-                #     f'DsGroup: When attempting to combine groups, '
-                #     f'found mismatch in time variables: '
-                #     f'{[g.time_var for g in groups]}.'
-                # )
                 self.action = None
-                # raise ValueError('DsGroup: When attempting to combine groups, '
-                #                  'found mismatch in time variables.')
             else:
+                # Group merging is default action when groups are passed to
+                # DsGroup instantiation.
                 self.action = action.lower() if action else "merge_groups"
             self.processed = None  # Filepath(s) of output
+        
         else:
+            # Group contains datasets in NC files.
             self.n_dims = n_dims  # TODO: Could set to parse files to infer
             # if not given.
             self.name = name if name else f"{str(n_dims)}d"
@@ -294,8 +279,8 @@ class DsGroup:
             # compliance, but files won't be merged/split.
             self.action = action.lower() if action else None
             self.filepaths = filepaths if filepaths else []
-            # Cannot set default valueas an empty list in arguments, or it
-            # assigns SAME empty list to every instance.
+            # Cannot set default value as an empty list in method's arguments, 
+            # or it assigns SAME empty list to every instance.
 
             self.to_process = None
             self.processed = None  # Filepath(s) of output
@@ -333,9 +318,6 @@ class DsGroup:
                                 exit("No time coordinate variable specified/found.")
                             self.time_var = list(ds.dims)[t - 1]
 
-                        # self.time_var = None    # Search in datasets as files
-                        # are added.
-
                     # TODO: verify all datasets in group have same time
                     # variable & time points.
                     # if all([tv==time_var[0] for tv in time_var.values()]):
@@ -363,8 +345,6 @@ class DsGroup:
                 f"available."
             )
 
-        # global vocabulary  # Allow time variable names to be updated
-
         if not op.exists(filepath):
             raise OSError(f"DsGroup.add: Filepath {filepath} not found.")
 
@@ -377,8 +357,6 @@ class DsGroup:
 
         # Update name stem common to all files in group.
         self.stem = stem_str(self.stem, filepath)
-
-        # print(f"Added {op.basename(filepath)} to {self.name}; stem: {self.stem}")
 
         # If don't have a time variable yet, attempt to find in new file.
         if not self.time_var:
@@ -421,10 +399,15 @@ class DsGroup:
             g["vocabulary"][self.n_dims].pop(self.time_var)
             self.time_var = exact_time_var
         else:
-            # TODO: confirm time variable in new dataset matches self.time_var
-            pass
+            # Confirm time variable in new dataset matches self.time_var
+            ds_time_var = get_time_var(
+                xr.open_dataset(filepath, decode_times=False)
+            )
+            if self.time_var != ds_time_var:
+                raise AttributeError(
+                    f"Time variable {ds_time_var} in dataset {filepath} does not match {self.time_var} specified in vocabulary."
+                )
 
-    # @performance_time
     def merge_times(self, shared: dict) -> dict[xr.Dataset, list[str]]:
         """
         Should print & return name of saved file(s)
@@ -433,8 +416,6 @@ class DsGroup:
         if shared["verbose"]:
             start_time = perf_counter()
 
-        # from cfize_ds import cfize_dataset  # To avoid circular imports
-        # global vocabulary
         if shared["verbose"]:
             log.append(
                 f"{strftime('%H:%M:%S', localtime())} "
@@ -445,33 +426,16 @@ class DsGroup:
                     [op.basename(path) for path in self.filepaths]
                 )
             )
-            # print(
-            #     f"Process {os.getpid()}: Merging time series in group {self.n_dims}:{self.name}, containing datasets {[op.basename(path) for path in self.filepaths]}."
-            #     )
-
+        
         hold_attrs = {}  # Global attributes to be set once for merged group.
-        # time_var = {}
-
+        
         processing = (
             self.get_datasets()
         )  # list(self.datasets())  # Open all datasets in group.
         for i, ds in enumerate(processing):
-            # Find dataset's time coordinate variable
-            # time_var[i] = variable_glob(ds=ds, var_glob=self.time_var)
-            # if len(time_var[i]) != 1:
-            #     # TODO: disambiguation
-            #     raise AttributeError(
-            #         'Multiple variables found in dataset that match time '
-            #         f'variable pattern, {self.time_var}.')
-            # else:
-            #     time_var[i] = time_var[i][0]
-
             # Assign any required global attributes to variables,
             # with associated attributes. Remove global attribute.
-            """
-            Assume these are only correct for last time-point in series.
-            """
-
+            # Assume these are only correct for last time-point in series.
             last_time_point = ds[self.time_var].data[-1]  # time_var[i]
             try:
                 new_vars = globals_to_vars(
@@ -557,7 +521,6 @@ class DsGroup:
         self.to_process.attrs.update(hold_attrs)
 
         # Derive title/filename from group's stem & dimension
-        # merged.attrs.update({'title': self.stem.strip('_ ') + self.n_dims if f'{self.n_dims}d' not in self.stem else self.stem.strip('_ ')})
         self.to_process.attrs["title"] = (
             self.stem.strip("_ ") + str(self.n_dims)
             if f"{self.n_dims}d" not in self.stem
@@ -569,10 +532,7 @@ class DsGroup:
                 f"         Process {os.getpid()}: DsGroup.merge_times took "
                 f"{perf_counter() - start_time} seconds."
             )
-            # print(
-            #     f"Process {os.getpid()}: DsGroup.merge_times took "
-            #     f"{perf_counter() - start_time} seconds."
-            # )
+            
         return {"merged": self.to_process, "log": log}
 
     def merge_groups(self, shared: dict) -> tuple[list[str], list[str]]:
@@ -593,16 +553,8 @@ class DsGroup:
                     [op.basename(path) for path in self.filepaths]
                 )
             )
-            # print(
-            #     f"Process {os.getpid()}: merging groups - {self.name} with "
-            #     f"{self.n_dims} dimensions, containing "
-            #     f"{[op.basename(path) for path in self.filepaths]}."
-            # )
 
         if self.action != "merge_groups":
-            # print(
-            #     'merge_groups is not valid if group.action != "merge_groups".'
-            # )
             return (
                 self.to_process,
                 log + ['merge_groups is not valid if group.action != "merge_groups".'],
@@ -612,18 +564,22 @@ class DsGroup:
 
         self.to_process = self.get_datasets()
 
-        for i, ds in enumerate(self.to_process):
+        for ds in self.to_process:
             # Store largest value per group of any 'one per group' global
-            # attributes, as value to assign to merged dataset.
+            # attributes (group_attributes in config.yml), as value to assign 
+            # to merged dataset.
             for attr, attr_type in shared["group_attrs"].items():
                 value = ds.attrs[attr]
+                # Apply required type to attribute value.
                 try:
                     value = attr_type(value)
-                except TypeError as e:
+                except TypeError:
                     if attr_type == datetime:
                         try:
                             value = datetime.fromisoformat(value)
                         except:
+                            # if value can't be automatically formatted,
+                            # try to format "manually"
                             d, t = value.split()
                             d = [int(n) for n in re.split("[/-]", d)]
                             t = [int(n) for n in t.split(":")]
@@ -635,8 +591,6 @@ class DsGroup:
                                 minute=t[1],
                                 second=t[2],
                             )
-                    else:
-                        raise e
                 if attr in hold_attrs:
                     if value > hold_attrs[attr]:
                         hold_attrs[attr] = value
@@ -653,7 +607,7 @@ class DsGroup:
                 f"{perf_counter() - m_time} seconds."
             )
 
-        # Close source datasets
+        # Close source datasets to free memory.
         [ds.close() for ds in self.to_process]
         self.to_process = []
 
@@ -672,23 +626,18 @@ class DsGroup:
         # Set filepath and save as processed
         filepath = op.join(shared["target_dir"], f"{merged.attrs['title']}.nc")
 
-        # TODO: This is where history attribute should be appended
+        # Log merge operation for history attribute.
         history = (
             datetime.now().isoformat()
             + f": interim files {[op.basename(f) for f in self.filepaths]} processed for CF compliance using CFizer version {VERSION} (https://github.com/cemac/CFizer); configuration and source files listed in log file {shared['logfile']}"
         )
+        # TODO: History attribute should be appended rather than assigned
         merged.attrs["history"] = history
 
-        # Set encoding
-        # TODO: encoding needs to be set, with each variable's encoding
+        # Set encoding for output.
+        # Encoding needs to be set, with each variable's encoding
         # specified. Otherwise, _FillValue is applied to all, including
         # coordinates, the latter contravening CF Conventions.
-        # encodings = {
-        #     k:{
-        #         'dtype': v.dtype,
-        #         '_FillValue': None
-        #     } for k, v in merged.variables.items()
-        # }  # if k == 'options_database' or k in ds.ds.coords
         encodings = (
             {
                 k: {
@@ -709,19 +658,19 @@ class DsGroup:
         )
 
         # Save dataset to NetCDF
-        # xarray docs report engine='h5netcdf' may sometimes be
-        # faster. However, it doesn't natively handle the
-        # various string length types used here.
+        # xarray docs report engine='h5netcdf' may sometimes be faster. 
+        # However, it doesn't natively handle the various string length types 
+        # used here.
         if shared["verbose"]:
             w_start = perf_counter()
-        merged.to_netcdf(path=filepath, encoding=encodings)  # , engine='h5netcdf'
+        merged.to_netcdf(path=filepath, encoding=encodings)
         if shared["verbose"]:
             log.append(
                 f"         Process {os.getpid()}: xarray.Dataset.to_netcdf took "
                 f"{perf_counter() - w_start} seconds."
             )
 
-        # TODO: Run each file through cf-checker?
+        # TODO: Run each file through cf-checker
 
         # Close dataset
         merged.close()
@@ -754,7 +703,6 @@ class DsGroup:
         # self.to_process = list(self.datasets())  # Open all datasets in group.
         return rtn
 
-    # @performance_time
     def cfize_and_save(self, shared: dict) -> dict:
         self.log = []
         if shared["verbose"]:
@@ -769,10 +717,6 @@ class DsGroup:
         errors = []
         warnings = []
         target_dir = shared["target_dir"]
-        # time_units = shared['time_units']
-        # vocab = shared['vocabulary']
-
-        # global reference_vars  # Allow reference_vars to be updated.
         self.processed = []
 
         if self.to_process and isinstance(self.to_process, xr.Dataset):
@@ -820,18 +764,6 @@ class DsGroup:
             # Set filepath and save as processed
             filepath = op.join(target_dir, f"{cf_ds.attrs['title']}.nc")
 
-            # Check for any reference variables for perturbation variables, and
-            # note filepath if found:
-            # [
-            #     reference_vars[v].update({'filepath':filepath})
-            #     for v in reference_vars.keys()
-            #     if v in cf_ds.variables
-            # ]
-            # [
-            #     shared['vocabulary'][reference_vars[v]['for'][0]][reference_vars[v]['for'][1]].update({'ref_array': cf_ds[v]})
-            #     for v in shared['reference_vars'].keys()
-            #     if v in cf_ds.variables
-            # ]
             for v in shared["reference_vars"].keys():
                 if v in cf_ds.variables:
                     [perturbation_dim, perturbation_var] = shared["reference_vars"][v][
@@ -880,7 +812,7 @@ class DsGroup:
                     k: {"dtype": v.dtype, "_FillValue": None}
                     for k, v in cf_ds.variables.items()
                 }
-            )  # if k == 'options_database' or k in ds.ds.coords
+            )
 
             # Save dataset to NetCDF
             # xarray docs report engine='h5netcdf' may sometimes be
@@ -912,10 +844,6 @@ class DsGroup:
 
             self.processed.append(filepath)
 
-        # if len(self.processed) == 1:
-        #     self.processed = self.processed[0]
-
-        # return update_globals
         return {
             "update_group": {"processed": self.processed, "time_var": self.time_var},
             "update_globals": update_globals,
