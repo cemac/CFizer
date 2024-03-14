@@ -106,6 +106,13 @@ def vocab_from_xls(filepath: str) -> dict:
                 vocabulary[subset][var]["long_name"] = vocabulary[subset][var][
                     "long_name"
                 ].title()
+            for attr, value in attrs.items():
+                if (
+                    isinstance(value, str) and 
+                    (value.lower() == "true" or
+                    value.lower() == "false")
+                ):
+                    vocabulary[subset][var][attr] = value.lower() == "true"
     [vocabulary.pop(e) for e in empty]
     return vocabulary
 
