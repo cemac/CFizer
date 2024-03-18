@@ -19,7 +19,8 @@ authors = [
   { name="Cameron Wilson", email="C.J.Wilson1@leeds.ac.uk" }
 ]
 maintainers = [
-  { name="Steven Boeing", email="S.Boeing@leeds.ac.uk" }
+  { name="Steven Boeing", email="S.Boeing@leeds.ac.uk" },
+  { name="Anne Barber", email="a.barber1@leeds.ac.uk"}
 ]
 description = "A tool to convert NetCDF output files from MONC into CF-compliant versions."
 readme = "README.md"
