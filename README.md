@@ -1,5 +1,5 @@
 # CFizer
-CFizer is a tool to make NetCDF output files from MONC (Met Office NERC cloud model) CF-compliant (Climate and Forecast metadata convention). It is also able to merge and split datasets according to the number of spatial dimensions, and apply compression to a user-specified level.
+CFizer is a tool to make NetCDF output files from MONC (Met Office NERC cloud model) CF-1.10 compliant (Climate and Forecast metadata convention). It is also able to merge and split datasets according to the number of spatial dimensions, and apply compression to a user-specified level.
 
 CEDA provides an [overview of the CF metadata convention](https://help.ceda.ac.uk/article/4507-the-cf-metadata-convention).
 
@@ -7,9 +7,7 @@ CEDA provides an [overview of the CF metadata convention](https://help.ceda.ac.u
 
 # Installation
 
-Clone this repository.
-
-**If using on JASMIN**, load the `jaspy` environment: `module load jaspy/3.10/r20230718`. This contains all the required dependencies.
+Clone this repository and cd into it.
 
 Create an empty Anaconda environment in which to install CFizer, and activate it:
 ```
@@ -21,6 +19,8 @@ Alternatively, a pip venv may be used:
 python -m venv /path/to/cfizer_env
 source /path/to/cfizer_env/bin/activate
 ```
+**If using on JASMIN**, load the `jaspy` environment: `module load jaspy/3.10/r20230718`. This contains all the required dependencies.
+
 **If not using on JASMIN**, load the following packages in your cfizer conda environment (this has been tested on both ARC4 and ARCHER2):
 
 - netcdf4=1.5.7
@@ -34,7 +34,7 @@ source /path/to/cfizer_env/bin/activate
 **Important**: *Before installing CFizer*, update the configuration file, `cfizer/config.yml` and, if necessary, the vocabulary (`cfizer/vocabulary.yml`) - see [Setup](#setup) below. Installation creates a copy of these in the virtual environment, so any subsequent changes either need to be made to the version in that environment, or require re-installation.
 
 Install CFizer:
-`pip install .`
+From the top level of the repository type `pip install .`
 
 # Setup
 The most important setup for users is to check/complete the `cfizer/vocabulary.yml` and `cfizer/config.yml` files. They define, respectively, how the MONC variables are to be modified for CF compliance, and parameters that should be uniform across a set of files, including the source of the original data.
@@ -59,7 +59,7 @@ where `<source_directory>` is the path to the directory containing the NC files 
 Option | Required (Y/N)? | Argument | Function | Example
 :---|:---|:---|:---|:---
 `--target_dir`, `-t`|N|Target directory|Specify directory for processed NetCDF files. Default is to create a sibling directory to the source directory, appending `+processed` to the same name.|`-t /work/project/diagnostic_outputs/230228`
-`--reference_time`, `-r` |Y| Datetime in ISO format|Date or date-time of origin for time units, in ISO format (`yyyy-mm-dd[{T/ }hh:mm[:ss][{+/-}hh:mm]]`). If not specified, CFizer tries to find it in any input file it finds, and requests user input if it fails. If no input file is present and no reference time is specified or is found in existing time units, the software will exit with an error message.|`-r 2020-01-25 00:00+00:00`
+`--reference_time`, `-r` |Y| Datetime in ISO format|Date or date-time of origin for time units, in ISO format and as a string (`"yyyy-mm-dd[{T/ }hh:mm[:ss][{+/-}hh:mm]]"`). If not specified, CFizer tries to find it in any input file it finds, and requests user input if it fails. If no input file is present and no reference time is specified or is found in existing time units, the software will exit with an error message.|`-r "2020-01-25 00:00+00:00"`
 `--calendar`, `-c`|N|Calendar|Calendar to use for time units. See [CF Conventions 4.4.1](https://cfconventions.org/Data/cf-conventions/cf-conventions-1.7/build/ch04s04.html) for valid options. Default: `proleptic_gregorian`|`--calendar proleptic_gregorian`
 `--cpus`, `-p`|N|Integer|Total number of cores to use for parallel processing (including controller process). Default: 1 (serial)|`-p 16`
 `--keep-interim`,`-i`|N| |Set if multiple dimension sets are being merged, but you want to keep the single-dimension-set files as well. By default, these redundant files are deleted.|
@@ -120,3 +120,5 @@ The new vocabulary YAML file will be created in the CFizer source code directory
 1.0.2  Code reformatting using *Black*, for consistency, and added maintainer to pyproject.toml.
 
 1.0.3  Includes the following fixes: 1) Adds checking for empty DsGroup filepath collections; 2) Adds check for availability of reference variables for converting perturbation values; 3) Corrects Boolean values in vocabulary in Excel spreadsheet to vocabulary tool; 4) Makes some minor corrections and adds some debugging clarifications. README.md updated to include instructions for installation on HPC systems other than JASMIN. Added maintainer to pyproject.toml.
+
+1.0.4 Although CFizer generates CF-1.10 compliant MONC output, `CF_VERSION` in startup.py has been relabelled as 1.8 instead of 1.10 (this label becomes part of the CFizer'd output metadata) so that output can be run through CEDA's cf-checker, which currently checks up to CF-1.8 - see issue #58 for further details.
