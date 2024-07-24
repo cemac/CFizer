@@ -1,5 +1,5 @@
 # CFizer
-CFizer is a tool to make NetCDF output files from MONC (Met Office NERC cloud model) CF-1.10 compliant (Climate and Forecast metadata convention). It is also able to merge and split datasets according to the number of spatial dimensions, and apply compression to a user-specified level.
+CFizer is a tool to make NetCDF output files from MONC (Met Office NERC cloud model) CF-1.10 compliant (Climate and Forecast metadata convention). It is also able to merge and split datasets according to the number of spatial dimensions, and apply compression to a user-specified level. Please note that although CFizer generates CF-1.10 compliant MONC output, the metadata is labelled as CF-1.8 so that - if required - it can be run through CEDA's cf-checker which, as of July 2024, checks up to CF-1.8 only.
 
 CEDA provides an [overview of the CF metadata convention](https://help.ceda.ac.uk/article/4507-the-cf-metadata-convention).
 
