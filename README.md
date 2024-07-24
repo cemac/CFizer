@@ -122,3 +122,5 @@ The new vocabulary YAML file will be created in the CFizer source code directory
 1.0.3  Includes the following fixes: 1) Adds checking for empty DsGroup filepath collections; 2) Adds check for availability of reference variables for converting perturbation values; 3) Corrects Boolean values in vocabulary in Excel spreadsheet to vocabulary tool; 4) Makes some minor corrections and adds some debugging clarifications. README.md updated to include instructions for installation on HPC systems other than JASMIN. Added maintainer to pyproject.toml.
 
 1.0.4 Although CFizer generates CF-1.10 compliant MONC output, `CF_VERSION` in startup.py has been relabelled as 1.8 instead of 1.10 (this label becomes part of the CFizer'd output metadata) so that output can be run through CEDA's cf-checker, which currently checks up to CF-1.8 - see issue #58 for further details.
+
+1.0.5 Included fix to cfize_ds.py in order to preserve time dimension when splitting datasets.
