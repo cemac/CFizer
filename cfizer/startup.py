@@ -12,7 +12,7 @@ from importlib.metadata import version
 VERSION = version("cfizer")
 # print(f"CFizer Version {VERSION}")
 
-CF_VERSION = "1.10"
+CF_VERSION = "1.8"
 
 CF_ATTRIBUTES = {
     "title",
